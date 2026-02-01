@@ -248,7 +248,7 @@ Follow your invariants and operating principles at all times."""
         logger.debug("=" * 60)
         
         try:
-            response = self.llm.chat(messages, temperature=0.7)
+            response = self.llm.chat(messages)  # Use default temperature
             llm_output = response.content
             
             # Debug: log what we got back

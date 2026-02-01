@@ -97,7 +97,7 @@ class OpenAIProvider(LLMProvider):
         self.model = config.model
         self.timeout = config.openai.timeout
     
-    def chat(self, messages: List[Message], temperature: float = 0.7) -> LLMResponse:
+    def chat(self, messages: List[Message], temperature: float = None) -> LLMResponse:
         import logging
         logger = logging.getLogger(__name__)
         
@@ -111,8 +111,11 @@ class OpenAIProvider(LLMProvider):
         payload = {
             "model": self.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
-            "temperature": temperature
         }
+        
+        # Only include temperature if explicitly set (some models don't support it)
+        if temperature is not None:
+            payload["temperature"] = temperature
         
         logger.debug(f"OpenAI request - model: {self.model}, api_key present: {bool(self.api_key)}, api_key prefix: {self.api_key[:10] if self.api_key else 'NONE'}...")
         
