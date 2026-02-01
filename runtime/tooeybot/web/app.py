@@ -772,7 +772,7 @@ async def logs_page(
     
     # Get coherence report if available
     belief_mgr = BeliefManager(home)
-    coherence = belief_mgr.coherence_check()
+    coherence = belief_mgr.run_coherence_check()
     
     return templates.TemplateResponse("logs.html", {
         "request": request,
@@ -915,7 +915,7 @@ async def control_coherence_check(request: Request):
     """Run coherence check on beliefs."""
     home = get_agent_home()
     belief_mgr = BeliefManager(home)
-    result = belief_mgr.coherence_check()
+    result = belief_mgr.run_coherence_check()
     return RedirectResponse(url="/logs", status_code=303)
 
 

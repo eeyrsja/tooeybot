@@ -458,12 +458,12 @@ class Agent:
         """Pause task and wait for user input via messaging system."""
         question = result.summary or "Needs user clarification"
         
-        # Extract more context from the cycle result
+        # Extract more context from the cycle state
         context = ""
-        if result.observation:
-            context = f"Last observation: {result.observation.summary}\n"
-        if result.reflection:
-            context += f"Reflection: {result.reflection.summary}"
+        if result.state.observation:
+            context = f"Last observation: {result.state.observation.summary}\n"
+        if result.state.reflection:
+            context += f"Reflection: {result.state.reflection.summary}"
         
         # Send message through messaging system
         msg_id = self.ask_user(
