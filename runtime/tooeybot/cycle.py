@@ -71,9 +71,13 @@ class Action:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Action":
+        payload = data.get("payload", {})
+        # Ensure payload is always a dict
+        if not isinstance(payload, dict):
+            payload = {"raw": payload} if payload else {}
         return cls(
             action_type=ActionType(data["action_type"]),
-            payload=data.get("payload", {}),
+            payload=payload,
             reasoning=data.get("reasoning", ""),
         )
 
@@ -726,6 +730,10 @@ Success Criteria:
             # Include action details
             if cycle.action:
                 payload = cycle.action.payload
+                # Defensive: ensure payload is a dict
+                if not isinstance(payload, dict):
+                    payload = {}
+                
                 if action_type == "execute_command":
                     lines.append(f"Command: `{payload.get('command', 'N/A')}`")
                 elif action_type == "read_file":
