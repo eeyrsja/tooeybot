@@ -199,15 +199,20 @@ Deadline: {task.deadline or 'None'}
         full_context = self.context.assemble(task_spec=task_spec)
         
         # Build messages for LLM
-        system_prompt = """You are Tooeybot, an autonomous agent running in a Linux sandbox.
+        system_prompt = f"""You are Tooeybot, an autonomous agent running in a Linux sandbox.
 You process tasks by reasoning about them and executing shell commands.
+
+IMPORTANT PATHS:
+- Your agent home is: {self.agent_home}
+- When tasks reference /agent/*, use the full path: {self.agent_home}/*
+- Example: /agent/scratch/file.txt -> {self.agent_home}/scratch/file.txt
 
 IMPORTANT: Use actual bash/shell commands, not abstract skill names.
 Examples of correct commands:
-- To write a file: echo "content" > /path/to/file.txt
-- To read a file: cat /path/to/file.txt
-- To create a directory: mkdir -p /path/to/dir
-- To append to a file: echo "content" >> /path/to/file.txt
+- To write a file: echo "content" > {self.agent_home}/scratch/file.txt
+- To read a file: cat {self.agent_home}/scratch/file.txt
+- To create a directory: mkdir -p {self.agent_home}/scratch/subdir
+- To append to a file: echo "content" >> {self.agent_home}/scratch/file.txt
 
 Do NOT use 'write_file', 'read_file', or 'log_event' as commands - these are conceptual skills, not shell commands.
 
