@@ -46,6 +46,25 @@ class ExecutionConfig(BaseModel):
     max_retries: int = 3
 
 
+class BudgetConfig(BaseModel):
+    """Hard limits on agent behavior."""
+    max_iterations_per_task: int = 20
+    max_consecutive_failures: int = 3
+    max_actions_without_progress: int = 5
+    max_active_tasks: int = 10
+    max_pending_tasks: int = 50
+    max_task_duration_minutes: int = 30
+
+
+class CuriosityConfig(BaseModel):
+    """Curiosity system settings."""
+    enabled: bool = True
+    max_proposals_per_cycle: int = 2
+    min_value_threshold: float = 0.6
+    max_tasks_per_day: int = 5
+    max_depth: int = 2  # How deep curiosity chains can go
+
+
 class LoggingConfig(BaseModel):
     level: str = "INFO"
     console: bool = True
@@ -56,6 +75,8 @@ class Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
     execution: ExecutionConfig = Field(default_factory=ExecutionConfig)
+    budgets: BudgetConfig = Field(default_factory=BudgetConfig)
+    curiosity: CuriosityConfig = Field(default_factory=CuriosityConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 

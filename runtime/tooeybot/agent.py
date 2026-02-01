@@ -1,22 +1,31 @@
 """
 Main agent implementation.
+
+Phase 2: Cycle-based reasoning with budgets, reflection, and curiosity.
 """
 
 import signal
 import time
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from .config import Config
 from .llm import create_provider, Message, LLMProvider
 from .logger import EventLogger
 from .executor import Executor
 from .context import ContextAssembler
-from .tasks import TaskManager, Task
+from .tasks import TaskManager, Task, TaskOrigin
 from .skills import SkillManager
 from .beliefs import BeliefManager
+from .budgets import AgentBudgets, BudgetEnforcer
+from .cycle import (
+    ReasoningCycle, CycleState, CycleHistory, CycleResult,
+    Decision, CuriosityProposal
+)
+from .reflection import StuckDetector, ReflectionSynthesizer
+from .curiosity import CuriosityManager
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +36,28 @@ class TickResult:
     success: bool
     task_processed: Optional[str] = None
     message: str = ""
+    cycles_run: int = 0
+    decision: str = ""
+    curiosity_tasks_created: int = 0
 
 
 class Agent:
-    """The main agent runtime."""
+    """
+    The main agent runtime.
+    
+    Phase 2 changes:
+    - Cycle-based reasoning (PLAN → ACT → OBSERVE → REFLECT → DECIDE)
+    - Budget enforcement with hard limits
+    - Stuck detection and recovery
+    - Curiosity-driven task creation
+    """
     
     def __init__(self, config: Config):
         self.config = config
         self.agent_home = config.agent_home
         self.running = False
         
-        # Initialize components
+        # Initialize core components
         self.llm: LLMProvider = create_provider(config.llm)
         self.event_logger = EventLogger(self.agent_home)
         self.executor = Executor(
@@ -54,6 +74,29 @@ class Agent:
             belief_manager=self.belief_manager
         )
         self.tasks = TaskManager(self.agent_home)
+        
+        # Phase 2 components
+        self.budgets = AgentBudgets(
+            max_iterations_per_task=config.budgets.max_iterations_per_task,
+            max_consecutive_failures=config.budgets.max_consecutive_failures,
+            max_actions_without_progress=config.budgets.max_actions_without_progress,
+            max_active_tasks=config.budgets.max_active_tasks,
+            max_pending_tasks=config.budgets.max_pending_tasks,
+            max_task_duration_minutes=config.budgets.max_task_duration_minutes,
+            curiosity_enabled=config.curiosity.enabled,
+            max_curiosity_tasks_per_day=config.curiosity.max_tasks_per_day,
+            max_curiosity_depth=config.curiosity.max_depth,
+            min_curiosity_value_threshold=config.curiosity.min_value_threshold,
+        )
+        self.budget_enforcer = BudgetEnforcer(self.budgets, self.agent_home)
+        self.cycle_history = CycleHistory(self.agent_home)
+        self.stuck_detector = StuckDetector()
+        self.reflection_synthesizer = ReflectionSynthesizer()
+        self.curiosity_manager = CuriosityManager(
+            self.agent_home,
+            self.budgets,
+            self.budget_enforcer
+        )
     
     def initialize(self) -> None:
         """Initialize the agent filesystem if needed."""
@@ -146,14 +189,17 @@ class Agent:
     
     def tick(self) -> TickResult:
         """
-        Execute a single agent tick.
+        Execute a single agent tick using the cycle-based reasoning loop.
         
-        This is the core execution loop:
-        1. Check for active or pending tasks
-        2. If task exists, process it
-        3. Otherwise, idle
+        Phase 2 changes:
+        - Runs multiple cycles until decision to stop
+        - Enforces budget limits
+        - Detects stuck patterns
+        - Processes curiosity proposals
+        
+        The loop: PLAN → ACT → OBSERVE → REFLECT → DECIDE → (repeat or stop)
         """
-        logger.info("Starting tick")
+        logger.info("Starting tick (Phase 2 cycle-based)")
         
         # Pre-flight check
         if not self.pre_flight_check():
@@ -161,6 +207,9 @@ class Agent:
                 success=False,
                 message="Pre-flight checks failed"
             )
+        
+        # Load budget state for recovery
+        self.budget_enforcer.load_state()
         
         # Check for active task
         task = self.tasks.get_active_task()
@@ -171,6 +220,7 @@ class Agent:
             if pending:
                 task = pending[0]
                 self.tasks.activate_task(task)
+                self.budgets.reset_for_new_task()
                 self.event_logger.log_task_update(
                     task.task_id, "activated", "Task moved to active"
                 )
@@ -179,212 +229,267 @@ class Agent:
             logger.info("No pending tasks")
             return TickResult(success=True, message="No pending tasks")
         
-        # Process the task
-        logger.info(f"Processing task: {task.task_id}")
-        return self._process_task(task)
+        # Run cycles until completion or stop condition
+        return self._run_cycles(task)
     
-    def _process_task(self, task: Task) -> TickResult:
-        """Process a single task using LLM reasoning."""
+    def _run_cycles(self, task: Task) -> TickResult:
+        """
+        Run reasoning cycles until task completion or stop condition.
         
-        # Build task specification for context
-        task_spec = f"""# Current Task: {task.task_id}
-Priority: {task.priority}
-Deadline: {task.deadline or 'None'}
-
-## Context
-{task.context or 'None provided'}
-
-## Description
-{task.description}
-
-## Success Criteria
-{chr(10).join(f'- {c}' for c in task.success_criteria) if task.success_criteria else 'None specified'}
-"""
+        This is the core Phase 2 loop that replaces the old _process_task.
+        """
+        logger.info(f"Starting cycles for task: {task.task_id}")
         
-        # Assemble full context
-        full_context = self.context.assemble(task_spec=task_spec)
+        # Load existing history for this task
+        history = self.cycle_history.load_history(task.task_id)
+        cycle_num = len(history)
+        cycles_run = 0
+        curiosity_tasks_created = 0
         
-        # Build messages for LLM
-        system_prompt = f"""You are Tooeybot, an autonomous agent running in a Linux sandbox.
-
-AGENT HOME: {self.agent_home}
-
-## Your Role
-You complete tasks step by step. Focus on the immediate task - the runtime handles:
-- Logging (don't add your own logging code)
-- Learning from outcomes (skills and beliefs are extracted automatically)
-- Memory updates
-
-## How to Complete Tasks
-1. Read the task description carefully
-2. Write a brief plan (1-2 sentences)
-3. Execute commands in a ```bash block
-4. End with TASK_COMPLETE: <summary> or TASK_BLOCKED: <reason>
-
-## Command Guidelines
-- Use simple, direct bash commands
-- One command per line (no complex scripts unless necessary)
-- Paths: when tasks reference /agent/*, use {self.agent_home}/*
-
-## Important
-- Don't over-engineer solutions
-- Don't wrap everything in error handlers unless the task requires it
-- Don't create backup files unless specifically asked
-- If something fails, report it with TASK_BLOCKED - don't retry endlessly
-
-## Response Format
-Plan: <1-2 sentences>
-
-```bash
-<commands>
-```
-
-TASK_COMPLETE: <what was accomplished>
-(or TASK_BLOCKED: <why it can't proceed>)"""
-
-        messages = [
-            Message(role="system", content=system_prompt),
-            Message(role="user", content=f"# Agent Context\n\n{full_context}\n\n---\n\nProcess the current task.")
-        ]
-        
-        # Debug: log what we're sending to the LLM
-        logger.debug("=" * 60)
-        logger.debug("SYSTEM PROMPT:")
-        logger.debug(system_prompt)
-        logger.debug("=" * 60)
-        logger.debug("USER MESSAGE:")
-        logger.debug(messages[1].content)
-        logger.debug("=" * 60)
-        
-        try:
-            response = self.llm.chat(messages)  # Use default temperature
-            llm_output = response.content
+        while True:
+            cycle_num += 1
+            cycles_run += 1
             
-            # Debug: log what we got back
-            logger.debug("=" * 60)
-            logger.debug("LLM RESPONSE:")
-            logger.debug(llm_output)
-            logger.debug("=" * 60)
+            logger.info(f"Cycle {cycle_num} for task {task.task_id}")
             
-            logger.info(f"LLM response tokens: {response.usage.get('total_tokens', 'unknown')}")
+            # Budget check
+            can_continue, reason = self.budget_enforcer.check_can_continue()
+            if not can_continue:
+                logger.warning(f"Budget exceeded: {reason}")
+                return self._handle_budget_exceeded(task, reason, cycles_run)
             
-        except Exception as e:
-            self.event_logger.log_error(
-                f"LLM call failed: {e}",
-                task_id=task.task_id
-            )
-            return TickResult(
-                success=False,
-                task_processed=task.task_id,
-                message=f"LLM error: {e}"
-            )
-        
-        # Parse and execute any commands in the response
-        # For Phase 0, we use a simple regex to extract bash blocks
-        import re
-        commands = re.findall(r'```bash\n(.*?)```', llm_output, re.DOTALL)
-        
-        # Track which skills were relevant for this task
-        relevant_skills = self.skill_manager.find_relevant_skills(task.description, limit=3)
-        used_skill_names = [s.name for s in relevant_skills]
-        
-        execution_success = True
-        for cmd_block in commands:
-            # Execute the entire block as a single script, not line-by-line
-            script = cmd_block.strip()
-            if script:
-                logger.info(f"Executing bash script ({len(script)} chars)")
-                result = self.executor.execute(
-                    command="bash",
-                    args=["-c", script],
-                    task_id=task.task_id,
-                    skill="execute_command"
-                )
-                
-                if result.exit_code != 0:
-                    logger.warning(f"Script failed with exit code {result.exit_code}")
-                    logger.warning(f"Stderr: {result.stderr}")
-                    execution_success = False
-                else:
-                    logger.info(f"Script completed successfully")
-                    if result.stdout:
-                        logger.debug(f"Stdout: {result.stdout[:500]}")
-        
-        # Check for completion markers
-        if "TASK_COMPLETE:" in llm_output:
-            summary = llm_output.split("TASK_COMPLETE:")[-1].strip().split('\n')[0]
+            # Stuck check
+            is_stuck, stuck_reason = self.stuck_detector.is_stuck(history)
+            if is_stuck:
+                logger.warning(f"Agent stuck: {stuck_reason}")
+                return self._handle_stuck(task, stuck_reason, cycles_run)
             
-            # Record skill usage for relevant skills
-            for skill_name in used_skill_names:
-                self.skill_manager.record_skill_use(skill_name, success=execution_success)
-            
-            # Extract beliefs from task outcome (only meaningful world knowledge)
+            # Run one cycle
             try:
-                extracted_beliefs = self.belief_manager.extract_beliefs_from_outcome(
-                    task_id=task.task_id,
-                    task_description=task.description,
-                    outcome=llm_output,
-                    success=execution_success,
-                    llm_provider=self.llm
+                cycle = ReasoningCycle(
+                    agent=self,
+                    task=task,
+                    cycle_id=cycle_num,
+                    history=history
                 )
-                if extracted_beliefs:
-                    logger.info(f"Extracted {len(extracted_beliefs)} beliefs from task outcome")
+                result = cycle.run()
             except Exception as e:
-                logger.warning(f"Belief extraction failed: {e}")
+                logger.error(f"Cycle failed: {e}")
+                self.budgets.record_iteration(made_progress=False, had_failure=True)
+                continue
             
-            # Propose skill from task outcome (if it's a reusable pattern)
-            try:
-                proposed_skill = self.skill_manager.propose_skill_from_outcome(
-                    task_id=task.task_id,
-                    task_description=task.description,
-                    outcome=llm_output,
-                    success=execution_success,
-                    llm_provider=self.llm
+            # Persist cycle state
+            history.append(result.state)
+            self.cycle_history.append_cycle(result.state)
+            
+            # Update budgets based on reflection
+            made_progress = (
+                result.state.reflection.progress_made 
+                if result.state.reflection else False
+            )
+            had_failure = (
+                not result.state.observation.success 
+                if result.state.observation else False
+            )
+            self.budgets.record_iteration(made_progress, had_failure)
+            self.budget_enforcer.save_state()
+            
+            # Log the cycle
+            self.event_logger.log_event(
+                "cycle_complete",
+                {
+                    "task_id": task.task_id,
+                    "cycle_id": cycle_num,
+                    "decision": result.decision.value,
+                    "progress": made_progress,
+                },
+                level="INFO"
+            )
+            
+            # Process curiosity proposals
+            if result.proposed_tasks:
+                created = self.curiosity_manager.process_proposals(
+                    result.proposed_tasks,
+                    parent_task_id=task.task_id,
+                    parent_depth=task.curiosity_depth
                 )
-                if proposed_skill:
-                    logger.info(f"Proposed new skill: {proposed_skill.stem}")
-                    self.event_logger.log_event(
-                        "skill_proposed",
-                        {"skill": proposed_skill.stem, "task": task.task_id},
-                        level="INFO"
-                    )
-            except Exception as e:
-                logger.warning(f"Skill proposal failed: {e}")
+                curiosity_tasks_created += len(created)
             
-            self.tasks.complete_task(
-                task,
-                summary=summary,
-                approach=llm_output,
-                artifacts=[]
-            )
-            self.event_logger.log_task_update(task.task_id, "completed", summary)
-            return TickResult(
-                success=True,
-                task_processed=task.task_id,
-                message=f"Completed: {summary}"
-            )
+            # Act on decision
+            if result.decision == Decision.COMPLETE:
+                return self._complete_task_with_cycles(
+                    task, result, cycles_run, curiosity_tasks_created
+                )
+            
+            elif result.decision == Decision.BLOCKED:
+                return self._block_task_with_cycles(
+                    task, result, cycles_run, curiosity_tasks_created
+                )
+            
+            elif result.decision == Decision.ASK_USER:
+                return self._pause_for_user(
+                    task, result, cycles_run, curiosity_tasks_created
+                )
+            
+            elif result.decision == Decision.BUDGET_EXCEEDED:
+                return self._handle_budget_exceeded(
+                    task, "Budget exceeded", cycles_run
+                )
+            
+            # CONTINUE - loop again
+            # Small delay between cycles to be respectful of resources
+            time.sleep(0.5)
+    
+    def _complete_task_with_cycles(
+        self, 
+        task: Task, 
+        result: CycleResult,
+        cycles_run: int,
+        curiosity_tasks_created: int
+    ) -> TickResult:
+        """Complete a task after cycle-based processing."""
+        summary = result.summary or "Task completed"
         
-        elif "TASK_BLOCKED:" in llm_output:
-            reason = llm_output.split("TASK_BLOCKED:")[-1].strip().split('\n')[0]
-            
-            # Record skill failures
-            for skill_name in used_skill_names:
-                self.skill_manager.record_skill_use(skill_name, success=False)
-            
-            self.tasks.block_task(task, reason)
-            self.event_logger.log_task_update(task.task_id, "blocked", reason)
-            return TickResult(
-                success=True,
-                task_processed=task.task_id,
-                message=f"Blocked: {reason}"
-            )
+        # Build approach from cycle history
+        history = self.cycle_history.load_history(task.task_id)
+        approach_lines = []
+        for cycle in history[-10:]:  # Last 10 cycles
+            if cycle.action:
+                approach_lines.append(
+                    f"- Cycle {cycle.cycle_id}: {cycle.action.action_type.value}"
+                )
+        approach = "\n".join(approach_lines) if approach_lines else "Single cycle completion"
         
-        # Task needs more work - keep it active
+        self.tasks.complete_task(
+            task,
+            summary=summary,
+            approach=approach,
+            artifacts=[],
+            learnings=f"Completed in {cycles_run} cycles. "
+                      f"Created {curiosity_tasks_created} curiosity tasks."
+        )
+        
+        self.event_logger.log_task_update(task.task_id, "completed", summary)
+        
         return TickResult(
             success=True,
             task_processed=task.task_id,
-            message="Task in progress"
+            message=f"Completed: {summary}",
+            cycles_run=cycles_run,
+            decision="complete",
+            curiosity_tasks_created=curiosity_tasks_created
         )
+    
+    def _block_task_with_cycles(
+        self,
+        task: Task,
+        result: CycleResult,
+        cycles_run: int,
+        curiosity_tasks_created: int
+    ) -> TickResult:
+        """Block a task after cycle-based processing."""
+        reason = result.summary or "Task blocked"
+        
+        self.tasks.block_task(task, reason)
+        self.event_logger.log_task_update(task.task_id, "blocked", reason)
+        
+        return TickResult(
+            success=True,
+            task_processed=task.task_id,
+            message=f"Blocked: {reason}",
+            cycles_run=cycles_run,
+            decision="blocked",
+            curiosity_tasks_created=curiosity_tasks_created
+        )
+    
+    def _pause_for_user(
+        self,
+        task: Task,
+        result: CycleResult,
+        cycles_run: int,
+        curiosity_tasks_created: int
+    ) -> TickResult:
+        """Pause task and wait for user input."""
+        reason = result.summary or "Needs user clarification"
+        
+        self.tasks.pause_task(task, reason)
+        self.event_logger.log_task_update(task.task_id, "paused", reason)
+        
+        return TickResult(
+            success=True,
+            task_processed=task.task_id,
+            message=f"Paused for user: {reason}",
+            cycles_run=cycles_run,
+            decision="ask_user",
+            curiosity_tasks_created=curiosity_tasks_created
+        )
+    
+    def _handle_budget_exceeded(
+        self,
+        task: Task,
+        reason: str,
+        cycles_run: int
+    ) -> TickResult:
+        """Handle budget exhaustion."""
+        full_reason = f"Budget exceeded: {reason}"
+        
+        self.tasks.pause_task(task, full_reason)
+        self.event_logger.log_task_update(task.task_id, "paused", full_reason)
+        self.event_logger.log_event(
+            "budget_exceeded",
+            {"task_id": task.task_id, "reason": reason},
+            level="WARNING"
+        )
+        
+        return TickResult(
+            success=True,
+            task_processed=task.task_id,
+            message=full_reason,
+            cycles_run=cycles_run,
+            decision="budget_exceeded"
+        )
+    
+    def _handle_stuck(
+        self,
+        task: Task,
+        reason: str,
+        cycles_run: int
+    ) -> TickResult:
+        """Handle stuck detection."""
+        full_reason = f"Agent stuck: {reason}"
+        
+        self.tasks.pause_task(task, full_reason)
+        self.event_logger.log_task_update(task.task_id, "paused", full_reason)
+        self.event_logger.log_event(
+            "stuck_detected",
+            {"task_id": task.task_id, "reason": reason},
+            level="WARNING"
+        )
+        
+        return TickResult(
+            success=True,
+            task_processed=task.task_id,
+            message=full_reason,
+            cycles_run=cycles_run,
+            decision="stuck"
+        )
+    
+    def get_cycle_status(self, task_id: str) -> Dict[str, Any]:
+        """Get status of cycles for a task."""
+        history = self.cycle_history.load_history(task_id)
+        budget_status = self.budget_enforcer.get_status_summary()
+        
+        return {
+            "task_id": task_id,
+            "cycles": len(history),
+            "last_cycle": history[-1].to_dict() if history else None,
+            "budgets": budget_status,
+            "stuck_indicators": self.stuck_detector.get_stuck_indicators(history),
+        }
+    
+    def get_curiosity_stats(self) -> Dict[str, Any]:
+        """Get curiosity system statistics."""
+        return self.curiosity_manager.get_daily_stats()
     
     def run(self, interval: int = 60) -> None:
         """Run the agent continuously."""

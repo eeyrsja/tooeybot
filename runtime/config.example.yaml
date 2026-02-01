@@ -1,4 +1,4 @@
-# Tooeybot Configuration
+# Tooeybot Configuration - Phase 2
 
 # Agent filesystem location
 agent_home: /agent
@@ -6,10 +6,10 @@ agent_home: /agent
 # LLM Provider Configuration
 llm:
   # Provider: ollama, openai, anthropic
-  provider: ollama
+  provider: openai
   
   # Model name
-  model: llama3.2
+  model: gpt-5-min
   
   # Provider-specific settings
   ollama:
@@ -35,6 +35,28 @@ context:
 execution:
   command_timeout: 300
   max_retries: 3
+
+# Budget limits (hard constraints)
+budgets:
+  # Per-task limits
+  max_iterations_per_task: 20
+  max_consecutive_failures: 3
+  max_actions_without_progress: 5
+  
+  # Global task limits
+  max_active_tasks: 10
+  max_pending_tasks: 50
+  
+  # Time limits
+  max_task_duration_minutes: 30
+
+# Curiosity system settings
+curiosity:
+  enabled: true
+  max_proposals_per_cycle: 2
+  min_value_threshold: 0.6
+  max_tasks_per_day: 5
+  max_depth: 2
 
 # Logging
 logging:

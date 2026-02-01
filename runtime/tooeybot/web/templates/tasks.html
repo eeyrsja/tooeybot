@@ -73,7 +73,20 @@
         </div>
         <div class="px-4 py-5 sm:p-6">
             <div class="flex items-center justify-between mb-2">
-                <span class="text-lg font-medium text-gray-900">{{ active.task_id }}</span>
+                <div class="flex items-center space-x-2">
+                    <span class="text-lg font-medium text-gray-900">{{ active.task_id }}</span>
+                    <!-- Origin badge -->
+                    {% if active.origin %}
+                    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium
+                        {% if active.origin == 'USER' %}bg-blue-100 text-blue-700
+                        {% elif active.origin == 'CURIOSITY' %}bg-amber-100 text-amber-700
+                        {% elif active.origin == 'PLAN' %}bg-purple-100 text-purple-700
+                        {% elif active.origin == 'RECOVERY' %}bg-red-100 text-red-700
+                        {% else %}bg-gray-100 text-gray-700{% endif %}">
+                        {{ active.origin }}
+                    </span>
+                    {% endif %}
+                </div>
                 <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
                     {% if active.priority == 'high' %}bg-red-100 text-red-800
                     {% elif active.priority == 'medium' %}bg-yellow-100 text-yellow-800
@@ -82,6 +95,9 @@
                 </span>
             </div>
             <p class="text-sm text-gray-600">{{ active.description }}</p>
+            {% if active.parent_task_id %}
+            <p class="text-xs text-gray-400 mt-1">Parent: {{ active.parent_task_id }}</p>
+            {% endif %}
             {% if active.success_criteria %}
             <div class="mt-3">
                 <span class="text-xs font-medium text-gray-500">Success Criteria:</span>
@@ -107,9 +123,25 @@
                 {% for task in pending %}
                 <li class="py-3">
                     <div class="flex items-center justify-between">
-                        <div>
-                            <span class="font-medium text-gray-900">{{ task.task_id }}</span>
+                        <div class="flex-1">
+                            <div class="flex items-center space-x-2">
+                                <span class="font-medium text-gray-900">{{ task.task_id }}</span>
+                                <!-- Origin badge -->
+                                {% if task.origin %}
+                                <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium
+                                    {% if task.origin == 'USER' %}bg-blue-100 text-blue-700
+                                    {% elif task.origin == 'CURIOSITY' %}bg-amber-100 text-amber-700
+                                    {% elif task.origin == 'PLAN' %}bg-purple-100 text-purple-700
+                                    {% elif task.origin == 'RECOVERY' %}bg-red-100 text-red-700
+                                    {% else %}bg-gray-100 text-gray-700{% endif %}">
+                                    {{ task.origin }}
+                                </span>
+                                {% endif %}
+                            </div>
                             <p class="text-sm text-gray-500">{{ task.description[:100] }}...</p>
+                            {% if task.parent_task_id %}
+                            <p class="text-xs text-gray-400">Parent: {{ task.parent_task_id }}</p>
+                            {% endif %}
                         </div>
                         <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
                             {% if task.priority == 'high' %}bg-red-100 text-red-800

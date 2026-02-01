@@ -26,10 +26,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from tooeybot.config import load_config, Config
 from tooeybot.agent import Agent
-from tooeybot.tasks import TaskManager, TaskParser
+from tooeybot.tasks import TaskManager, TaskParser, TaskOrigin
 from tooeybot.skills import SkillManager
 from tooeybot.beliefs import BeliefManager
 from tooeybot.maintenance import MaintenanceManager
+from tooeybot.cycle import CycleHistory
+from tooeybot.curiosity import CuriosityManager
+from tooeybot.budgets import AgentBudgets, BudgetEnforcer
 
 
 app = FastAPI(title="Tooeybot", description="Autonomous Agent Web Interface")
@@ -120,6 +123,31 @@ async def dashboard(request: Request):
     agent = Agent(cfg)
     health = agent.health_check()
     
+    # Phase 2: Get cycle and budget info
+    cycle_history = CycleHistory(home)
+    budgets = AgentBudgets(
+        max_iterations_per_task=cfg.budgets.max_iterations_per_task,
+        max_consecutive_failures=cfg.budgets.max_consecutive_failures,
+        max_actions_without_progress=cfg.budgets.max_actions_without_progress,
+        curiosity_enabled=cfg.curiosity.enabled,
+        max_curiosity_tasks_per_day=cfg.curiosity.max_tasks_per_day,
+    )
+    budget_enforcer = BudgetEnforcer(budgets, home)
+    budget_enforcer.load_state()
+    budget_status = budget_enforcer.get_status_summary()
+    
+    # Get curiosity stats
+    curiosity_mgr = CuriosityManager(home, budgets, budget_enforcer)
+    curiosity_stats = curiosity_mgr.get_daily_stats()
+    
+    # Get cycle count for active task
+    cycle_count = 0
+    if active_task:
+        cycle_count = cycle_history.get_cycle_count(active_task.task_id)
+    
+    # Task origin breakdown
+    task_origins = task_mgr.count_by_origin()
+    
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "pending_count": len(pending_tasks),
@@ -129,6 +157,11 @@ async def dashboard(request: Request):
         "skill_count": len(skills),
         "recent_events": events,
         "health": health,
+        # Phase 2 additions
+        "budget_status": budget_status,
+        "curiosity_stats": curiosity_stats,
+        "cycle_count": cycle_count,
+        "task_origins": task_origins,
     })
 
 
@@ -226,6 +259,124 @@ async def run_tick(request: Request):
     result = agent.tick()
     
     return RedirectResponse(url="/tasks", status_code=303)
+
+
+# ============================================================================
+# Cycles (Phase 2)
+# ============================================================================
+
+@app.get("/cycles", response_class=HTMLResponse)
+async def cycles_page(request: Request, task_id: str = ""):
+    """Cycle history viewer page."""
+    home = get_agent_home()
+    cfg = get_config()
+    
+    cycle_history = CycleHistory(home)
+    
+    # Get list of tasks with cycle history
+    history_dir = home / "tasks" / "history"
+    tasks_with_history = []
+    if history_dir.exists():
+        for hf in sorted(history_dir.glob("*.jsonl"), reverse=True)[:20]:
+            task_id_from_file = hf.stem
+            cycle_count = sum(1 for _ in hf.read_text().strip().split("\n") if _.strip())
+            tasks_with_history.append({
+                "task_id": task_id_from_file,
+                "cycles": cycle_count,
+            })
+    
+    # Get cycles for selected task
+    cycles = []
+    selected_task = task_id
+    if task_id:
+        history = cycle_history.load_history(task_id)
+        for cycle in history:
+            cycles.append({
+                "cycle_id": cycle.cycle_id,
+                "phase": cycle.phase.value,
+                "action_type": cycle.action.action_type.value if cycle.action else None,
+                "success": cycle.observation.success if cycle.observation else None,
+                "progress": cycle.reflection.progress_made if cycle.reflection else None,
+                "decision": cycle.decision.value,
+                "timestamp": cycle.timestamp.strftime("%H:%M:%S"),
+            })
+    
+    # Get budget status
+    budgets = AgentBudgets(
+        max_iterations_per_task=cfg.budgets.max_iterations_per_task,
+        max_consecutive_failures=cfg.budgets.max_consecutive_failures,
+    )
+    budget_enforcer = BudgetEnforcer(budgets, home)
+    budget_enforcer.load_state()
+    budget_status = budget_enforcer.get_status_summary()
+    
+    return templates.TemplateResponse("cycles.html", {
+        "request": request,
+        "tasks_with_history": tasks_with_history,
+        "selected_task": selected_task,
+        "cycles": cycles,
+        "budget_status": budget_status,
+    })
+
+
+@app.get("/cycles/{task_id}", response_class=HTMLResponse)
+async def cycles_for_task(request: Request, task_id: str):
+    """View cycles for a specific task."""
+    return await cycles_page(request, task_id)
+
+
+# ============================================================================
+# Curiosity (Phase 2)
+# ============================================================================
+
+@app.get("/curiosity", response_class=HTMLResponse)
+async def curiosity_page(request: Request):
+    """Curiosity system dashboard."""
+    home = get_agent_home()
+    cfg = get_config()
+    
+    budgets = AgentBudgets(
+        curiosity_enabled=cfg.curiosity.enabled,
+        max_curiosity_tasks_per_day=cfg.curiosity.max_tasks_per_day,
+        max_curiosity_depth=cfg.curiosity.max_depth,
+        min_curiosity_value_threshold=cfg.curiosity.min_value_threshold,
+    )
+    budget_enforcer = BudgetEnforcer(budgets, home)
+    curiosity_mgr = CuriosityManager(home, budgets, budget_enforcer)
+    
+    # Get stats
+    stats = curiosity_mgr.get_daily_stats()
+    
+    # Get recent curiosity log entries
+    log_entries = []
+    curiosity_log = home / "logs" / "curiosity.jsonl"
+    if curiosity_log.exists():
+        for line in reversed(curiosity_log.read_text().strip().split("\n")[-50:]):
+            if line.strip():
+                try:
+                    log_entries.append(json.loads(line))
+                except:
+                    pass
+    
+    # Get curiosity-origin tasks
+    task_mgr = TaskManager(home)
+    curiosity_tasks = [
+        t for t in task_mgr.get_pending_tasks()
+        if t.origin == TaskOrigin.CURIOSITY
+    ]
+    
+    return templates.TemplateResponse("curiosity.html", {
+        "request": request,
+        "stats": stats,
+        "log_entries": log_entries[:20],
+        "curiosity_tasks": curiosity_tasks,
+        "config": {
+            "enabled": cfg.curiosity.enabled,
+            "max_per_day": cfg.curiosity.max_tasks_per_day,
+            "max_depth": cfg.curiosity.max_depth,
+            "min_value": cfg.curiosity.min_value_threshold,
+        },
+    })
 
 
 # ============================================================================
@@ -662,11 +813,43 @@ async def api_status():
     agent = Agent(cfg)
     health = agent.health_check()
     
+    # Phase 2: Include budget and cycle info
+    budgets = AgentBudgets()
+    budget_enforcer = BudgetEnforcer(budgets, home)
+    budget_enforcer.load_state()
+    
+    cycle_count = 0
+    if active:
+        cycle_history = CycleHistory(home)
+        cycle_count = cycle_history.get_cycle_count(active.task_id)
+    
     return {
         "active_task": active.task_id if active else None,
         "pending_count": len(pending),
         "health_ok": all(h["ok"] for h in health.values()),
+        "cycle_count": cycle_count,
+        "budget_status": budget_enforcer.get_status_summary(),
     }
+
+
+@app.get("/api/cycles/{task_id}")
+async def api_cycles(task_id: str):
+    """Get cycle data for a task."""
+    home = get_agent_home()
+    cfg = get_config()
+    
+    agent = Agent(cfg)
+    return agent.get_cycle_status(task_id)
+
+
+@app.get("/api/curiosity")
+async def api_curiosity():
+    """Get curiosity statistics."""
+    home = get_agent_home()
+    cfg = get_config()
+    
+    agent = Agent(cfg)
+    return agent.get_curiosity_stats()
 
 
 # ============================================================================

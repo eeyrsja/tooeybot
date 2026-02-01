@@ -32,6 +32,45 @@
         </div>
     </div>
 
+    <!-- Phase 2: Budget and Curiosity Status -->
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <!-- Current Cycles -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Current Task Cycles</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-blue-600">{{ cycle_count }}</dd>
+            <dd class="mt-1 text-xs text-gray-400">{{ budget_status.iterations if budget_status else 'N/A' }}</dd>
+        </div>
+        
+        <!-- Budget Status -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Budget Status</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight {% if budget_status and budget_status.can_continue %}text-green-600{% else %}text-red-600{% endif %}">
+                {% if budget_status and budget_status.can_continue %}OK{% else %}Limit{% endif %}
+            </dd>
+            <dd class="mt-1 text-xs text-gray-400">Failures: {{ budget_status.failures if budget_status else '0/3' }}</dd>
+        </div>
+        
+        <!-- Curiosity Today -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Curiosity Tasks Today</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-amber-600">{{ curiosity_stats.created if curiosity_stats else 0 }}</dd>
+            <dd class="mt-1 text-xs text-gray-400">Remaining: {{ curiosity_stats.remaining_budget if curiosity_stats else 5 }}</dd>
+        </div>
+        
+        <!-- Task Origins -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Task Origins</dt>
+            <dd class="mt-1 text-xs">
+                {% if task_origins %}
+                <span class="text-gray-600">User: {{ task_origins.user or 0 }}</span> |
+                <span class="text-amber-600">Curiosity: {{ task_origins.curiosity or 0 }}</span>
+                {% else %}
+                <span class="text-gray-400">No data</span>
+                {% endif %}
+            </dd>
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <!-- Active Task -->
         <div class="overflow-hidden rounded-lg bg-white shadow">
@@ -43,19 +82,39 @@
                 <div class="space-y-2">
                     <div class="flex items-center justify-between">
                         <span class="text-lg font-medium text-gray-900">{{ active_task.task_id }}</span>
-                        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
-                            {% if active_task.priority == 'high' %}bg-red-100 text-red-800
-                            {% elif active_task.priority == 'medium' %}bg-yellow-100 text-yellow-800
-                            {% else %}bg-green-100 text-green-800{% endif %}">
-                            {{ active_task.priority }}
-                        </span>
+                        <div class="flex items-center space-x-2">
+                            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                                {% if active_task.priority == 'high' %}bg-red-100 text-red-800
+                                {% elif active_task.priority == 'medium' %}bg-yellow-100 text-yellow-800
+                                {% else %}bg-green-100 text-green-800{% endif %}">
+                                {{ active_task.priority }}
+                            </span>
+                            {% if active_task.origin and active_task.origin.value != 'user' %}
+                            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800">
+                                {{ active_task.origin.value }}
+                            </span>
+                            {% endif %}
+                        </div>
                     </div>
                     <p class="text-sm text-gray-600">{{ active_task.description[:200] }}...</p>
-                    <form action="/tasks/tick" method="post" class="mt-4">
-                        <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
-                            ▶ Run Tick
-                        </button>
-                    </form>
+                    
+                    <!-- Cycle Progress -->
+                    <div class="mt-2 flex items-center text-xs text-gray-500">
+                        <span>🔄 Cycles: {{ cycle_count }}</span>
+                        <span class="mx-2">|</span>
+                        <span>📊 {{ budget_status.iterations if budget_status else 'N/A' }}</span>
+                    </div>
+                    
+                    <div class="mt-4 flex space-x-2">
+                        <form action="/tasks/tick" method="post">
+                            <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                                ▶ Run Tick
+                            </button>
+                        </form>
+                        <a href="/cycles/{{ active_task.task_id }}" class="inline-flex items-center rounded-md bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-200">
+                            📈 View Cycles
+                        </a>
+                    </div>
                 </div>
                 {% else %}
                 <div class="text-center py-6">

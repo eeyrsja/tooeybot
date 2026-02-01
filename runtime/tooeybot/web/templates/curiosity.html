@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Curiosity - Tooeybot{% endblock %}
+{% block header %}Curiosity System{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Curiosity Stats -->
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Tasks Created Today</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-amber-600">{{ stats.created if stats else 0 }}</dd>
+        </div>
+        
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Proposals Rejected</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-600">{{ stats.rejected if stats else 0 }}</dd>
+        </div>
+        
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Remaining Budget</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-green-600">{{ stats.remaining_budget if stats else 5 }}</dd>
+        </div>
+        
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Status</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight {% if config.enabled %}text-green-600{% else %}text-gray-400{% endif %}">
+                {{ 'Active' if config.enabled else 'Disabled' }}
+            </dd>
+        </div>
+    </div>
+
+    <!-- Configuration -->
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-900">Curiosity Configuration</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                    <span class="text-gray-500">Enabled:</span>
+                    <span class="ml-2 font-medium {% if config.enabled %}text-green-600{% else %}text-red-600{% endif %}">
+                        {{ 'Yes' if config.enabled else 'No' }}
+                    </span>
+                </div>
+                <div>
+                    <span class="text-gray-500">Max per day:</span>
+                    <span class="ml-2 font-medium text-gray-900">{{ config.max_per_day }}</span>
+                </div>
+                <div>
+                    <span class="text-gray-500">Max depth:</span>
+                    <span class="ml-2 font-medium text-gray-900">{{ config.max_depth }}</span>
+                </div>
+                <div>
+                    <span class="text-gray-500">Min value threshold:</span>
+                    <span class="ml-2 font-medium text-gray-900">{{ config.min_value }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <!-- Pending Curiosity Tasks -->
+        <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+                <h3 class="text-lg font-medium leading-6 text-gray-900">🔍 Pending Curiosity Tasks</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6 max-h-96 overflow-y-auto">
+                {% if curiosity_tasks %}
+                <ul class="divide-y divide-gray-200">
+                    {% for task in curiosity_tasks %}
+                    <li class="py-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex-1">
+                                <span class="text-sm font-medium text-gray-900">{{ task.task_id }}</span>
+                                <p class="text-xs text-gray-500 mt-1">{{ task.description[:100] }}...</p>
+                                <div class="mt-1 flex items-center space-x-2">
+                                    <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs bg-amber-100 text-amber-800">
+                                        depth: {{ task.curiosity_depth }}
+                                    </span>
+                                    {% if task.parent_task_id %}
+                                    <span class="text-xs text-gray-400">from: {{ task.parent_task_id }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                                {% if task.priority == 'high' %}bg-red-100 text-red-800
+                                {% elif task.priority == 'medium' %}bg-yellow-100 text-yellow-800
+                                {% else %}bg-green-100 text-green-800{% endif %}">
+                                {{ task.priority }}
+                            </span>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-gray-500 text-center py-4">No pending curiosity tasks</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Activity Log -->
+        <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+                <h3 class="text-lg font-medium leading-6 text-gray-900">📋 Recent Curiosity Activity</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6 max-h-96 overflow-y-auto">
+                {% if log_entries %}
+                <ul class="space-y-3">
+                    {% for entry in log_entries %}
+                    <li class="text-sm {% if entry.event == 'curiosity_task_created' %}bg-green-50{% else %}bg-gray-50{% endif %} p-2 rounded">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium 
+                                {% if entry.event == 'curiosity_task_created' %}text-green-700
+                                {% else %}text-gray-600{% endif %}">
+                                {% if entry.event == 'curiosity_task_created' %}
+                                ✓ Task Created
+                                {% else %}
+                                ✗ Proposal Rejected
+                                {% endif %}
+                            </span>
+                            <span class="text-xs text-gray-400">{{ entry.timestamp[:16] if entry.timestamp else '' }}</span>
+                        </div>
+                        {% if entry.event == 'curiosity_task_created' and entry.task %}
+                        <p class="text-xs text-gray-600 mt-1">{{ entry.task.description[:80] }}...</p>
+                        <div class="text-xs text-gray-400 mt-1">
+                            Category: {{ entry.task.category }} | Value: {{ entry.task.estimated_value }}
+                        </div>
+                        {% elif entry.event == 'curiosity_proposal_rejected' %}
+                        <p class="text-xs text-gray-500 mt-1">Reason: {{ entry.reason }}</p>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-gray-500 text-center py-4">No recent curiosity activity</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Breakdown -->
+    {% if stats and stats.categories %}
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-900">Category Breakdown (Today)</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <div class="flex flex-wrap gap-4">
+                {% for category, count in stats.categories.items() %}
+                <div class="flex items-center space-x-2">
+                    <span class="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium
+                        {% if category == 'verification' %}bg-blue-100 text-blue-800
+                        {% elif category == 'documentation' %}bg-purple-100 text-purple-800
+                        {% elif category == 'robustness' %}bg-green-100 text-green-800
+                        {% else %}bg-gray-100 text-gray-800{% endif %}">
+                        {{ category }}: {{ count }}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Explanation -->
+    <div class="overflow-hidden rounded-lg bg-gray-50 shadow-sm">
+        <div class="px-4 py-3">
+            <h4 class="text-sm font-medium text-gray-700">About Curiosity</h4>
+            <p class="mt-2 text-xs text-gray-600">
+                Curiosity allows the agent to propose and create follow-up tasks during reflection.
+                These tasks help verify results, document findings, improve robustness, or explore related topics.
+                Curiosity is <strong>bounded</strong> by daily limits and value thresholds to prevent runaway behavior.
+            </p>
+            <div class="mt-2 flex flex-wrap gap-2 text-xs">
+                <span class="inline-flex items-center rounded px-2 py-0.5 bg-blue-100 text-blue-700">🔍 Verification</span>
+                <span class="inline-flex items-center rounded px-2 py-0.5 bg-purple-100 text-purple-700">📝 Documentation</span>
+                <span class="inline-flex items-center rounded px-2 py-0.5 bg-green-100 text-green-700">🛡️ Robustness</span>
+                <span class="inline-flex items-center rounded px-2 py-0.5 bg-gray-100 text-gray-700">🔭 Exploration</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
