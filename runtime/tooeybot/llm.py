@@ -98,6 +98,9 @@ class OpenAIProvider(LLMProvider):
         self.timeout = config.openai.timeout
     
     def chat(self, messages: List[Message], temperature: float = 0.7) -> LLMResponse:
+        import logging
+        logger = logging.getLogger(__name__)
+        
         url = f"{self.base_url}/chat/completions"
         
         headers = {
@@ -111,8 +114,12 @@ class OpenAIProvider(LLMProvider):
             "temperature": temperature
         }
         
+        logger.debug(f"OpenAI request - model: {self.model}, api_key present: {bool(self.api_key)}, api_key prefix: {self.api_key[:10] if self.api_key else 'NONE'}...")
+        
         with httpx.Client(timeout=self.timeout) as client:
             response = client.post(url, json=payload, headers=headers)
+            if response.status_code != 200:
+                logger.error(f"OpenAI error response: {response.text}")
             response.raise_for_status()
             data = response.json()
         
