@@ -1,0 +1,42 @@
+# Tooeybot Configuration
+
+# Agent filesystem location
+agent_home: /agent
+
+# LLM Provider Configuration
+llm:
+  # Provider: ollama, openai, anthropic
+  provider: ollama
+  
+  # Model name
+  model: llama3.2
+  
+  # Provider-specific settings
+  ollama:
+    base_url: http://localhost:11434
+    timeout: 120
+  
+  openai:
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    timeout: 60
+  
+  anthropic:
+    base_url: https://api.anthropic.com
+    api_key: ${ANTHROPIC_API_KEY}
+    timeout: 60
+
+# Context settings
+context:
+  max_tokens: 8000
+  response_reserve: 2000
+
+# Execution settings
+execution:
+  command_timeout: 300
+  max_retries: 3
+
+# Logging
+logging:
+  level: INFO
+  console: true
