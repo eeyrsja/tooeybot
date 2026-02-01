@@ -455,16 +455,30 @@ class Agent:
         cycles_run: int,
         curiosity_tasks_created: int
     ) -> TickResult:
-        """Pause task and wait for user input."""
-        reason = result.summary or "Needs user clarification"
+        """Pause task and wait for user input via messaging system."""
+        question = result.summary or "Needs user clarification"
         
-        self.tasks.pause_task(task, reason)
-        self.event_logger.log_task_update(task.task_id, "paused", reason)
+        # Extract more context from the cycle result
+        context = ""
+        if result.observation:
+            context = f"Last observation: {result.observation.summary}\n"
+        if result.reflection:
+            context += f"Reflection: {result.reflection.summary}"
+        
+        # Send message through messaging system
+        msg_id = self.ask_user(
+            question=question,
+            context=context,
+            task_id=task.task_id,
+            priority=MessagePriority.HIGH
+        )
+        
+        self.event_logger.log_task_update(task.task_id, "waiting_user", question)
         
         return TickResult(
             success=True,
             task_processed=task.task_id,
-            message=f"Paused for user: {reason}",
+            message=f"Asked user: {question} (message: {msg_id})",
             cycles_run=cycles_run,
             decision="ask_user",
             curiosity_tasks_created=curiosity_tasks_created
