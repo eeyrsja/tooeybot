@@ -26,6 +26,7 @@ from .cycle import (
 )
 from .reflection import StuckDetector, ReflectionSynthesizer
 from .curiosity import CuriosityManager
+from .messaging import MessageManager, MessageType, MessagePriority
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,9 @@ class Agent:
             self.budgets,
             self.budget_enforcer
         )
+        
+        # Messaging system
+        self.messaging = MessageManager(self.agent_home)
     
     def initialize(self) -> None:
         """Initialize the agent filesystem if needed."""
@@ -233,8 +237,28 @@ class Agent:
         # Load budget state for recovery
         self.budget_enforcer.load_state()
         
+        # Check for pending user messages first
+        pending_messages = self.messaging.get_unread_for_agent()
+        if pending_messages:
+            # Process user messages before continuing
+            self._process_user_messages(pending_messages)
+        
         # Check for active task
         task = self.tasks.get_active_task()
+        
+        # Check if task is waiting for user
+        if task and task.status == "waiting_user":
+            # Check if we got a response
+            if not pending_messages:
+                logger.info(f"Task {task.task_id} waiting for user response")
+                return TickResult(
+                    success=True,
+                    task_processed=task.task_id,
+                    message="Task waiting for user response"
+                )
+            # User responded, resume the task
+            task.status = "active"
+            self.tasks.update_task(task)
         
         # If no active task, get next from inbox
         if not task:
@@ -513,6 +537,97 @@ class Agent:
         """Get curiosity system statistics."""
         return self.curiosity_manager.get_daily_stats()
     
+    def _process_user_messages(self, messages: List[Any]) -> None:
+        """
+        Process incoming user messages.
+        
+        Marks messages as read and logs them.
+        The actual interpretation happens in the cycle's context.
+        """
+        for msg in messages:
+            self.messaging.mark_read(msg.id)
+            self.event_logger.log_event(
+                "user_message_received",
+                {
+                    "message_id": msg.id,
+                    "thread_id": msg.thread_id,
+                    "type": msg.message_type.value,
+                },
+                level="INFO"
+            )
+            logger.info(f"Received user message: {msg.subject}")
+    
+    def ask_user(
+        self,
+        question: str,
+        context: str = "",
+        task_id: Optional[str] = None,
+        priority: MessagePriority = MessagePriority.NORMAL,
+    ) -> str:
+        """
+        Ask the user a question and transition to waiting state.
+        
+        Returns the message ID for tracking.
+        """
+        msg = self.messaging.send_agent_message(
+            message_type=MessageType.QUESTION,
+            subject=question[:100],  # First 100 chars as subject
+            body=f"{question}\n\n{context}" if context else question,
+            task_id=task_id,
+            priority=priority,
+            context={"awaiting_response": True},
+        )
+        
+        # Mark current task as waiting
+        if task_id:
+            task = self.tasks.get_task_by_id(task_id)
+            if task:
+                task.status = "waiting_user"
+                self.tasks.update_task(task)
+        
+        self.event_logger.log_event(
+            "question_sent",
+            {"message_id": msg.id, "task_id": task_id, "subject": question[:100]},
+            level="INFO"
+        )
+        
+        logger.info(f"Asked user: {question[:100]}")
+        return msg.id
+    
+    def send_status(
+        self,
+        subject: str,
+        body: str,
+        task_id: Optional[str] = None,
+    ) -> str:
+        """Send a status update to the user."""
+        msg = self.messaging.send_agent_message(
+            message_type=MessageType.STATUS,
+            subject=subject,
+            body=body,
+            task_id=task_id,
+        )
+        return msg.id
+    
+    def send_completion(
+        self,
+        task_id: str,
+        summary: str,
+        details: str = "",
+    ) -> str:
+        """Send a task completion message to the user."""
+        msg = self.messaging.send_agent_message(
+            message_type=MessageType.COMPLETION,
+            subject=f"Task completed: {task_id}",
+            body=f"{summary}\n\n{details}" if details else summary,
+            task_id=task_id,
+        )
+        return msg.id
+    
+    def get_message_stats(self) -> Dict[str, Any]:
+        """Get messaging statistics."""
+        return self.messaging.get_stats()
+
     def run(self, interval: int = 60) -> None:
         """Run the agent continuously."""
         self.running = True

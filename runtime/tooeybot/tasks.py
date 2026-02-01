@@ -23,6 +23,16 @@ class TaskOrigin(Enum):
     RECOVERY = "recovery"   # Created for error recovery
 
 
+class TaskStatus(Enum):
+    """Status of a task."""
+    PENDING = "pending"
+    ACTIVE = "active"
+    WAITING_USER = "waiting_user"  # Waiting for user response
+    PAUSED = "paused"              # Temporarily paused
+    COMPLETED = "completed"
+    BLOCKED = "blocked"            # Cannot proceed
+
+
 @dataclass
 class Task:
     """A task from the inbox."""
@@ -41,6 +51,7 @@ class Task:
     iteration_count: int = 0
     max_iterations: int = 20
     curiosity_depth: int = 0  # For curiosity-spawned tasks
+    status: str = "pending"  # pending, active, waiting_user, paused, completed, blocked
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialize task for storage/display."""
@@ -397,3 +408,52 @@ priority: {priority}
         self.active_path.write_text("# Active Task\n\n*No active task*\n")
         
         logger.info(f"Paused task: {task.task_id} - {reason}")
+    
+    def get_task_by_id(self, task_id: str) -> Optional[Task]:
+        """Find a task by ID from any location."""
+        # Check active
+        active = self.get_active_task()
+        if active and active.task_id == task_id:
+            return active
+        
+        # Check pending
+        for task in self.get_pending_tasks():
+            if task.task_id == task_id:
+                return task
+        
+        return None
+    
+    def update_task(self, task: Task) -> None:
+        """Update a task's content (typically for status changes)."""
+        active = self.get_active_task()
+        if active and active.task_id == task.task_id:
+            # Rebuild raw content with current state
+            self._write_task_to_active(task)
+            logger.info(f"Updated task: {task.task_id}")
+    
+    def _write_task_to_active(self, task: Task) -> None:
+        """Write task to active file."""
+        content = f"""---
+task_id: {task.task_id}
+priority: {task.priority}
+origin: {task.origin.value if hasattr(task.origin, 'value') else task.origin}
+status: {task.status}
+"""
+        if task.parent_task_id:
+            content += f"parent_task: {task.parent_task_id}\n"
+        if task.curiosity_depth > 0:
+            content += f"curiosity_depth: {task.curiosity_depth}\n"
+        if task.context:
+            content += f"context: |\n"
+            for line in task.context.split('\n'):
+                content += f"  {line}\n"
+        content += f"""---
+{task.description}
+
+### Success Criteria
+"""
+        for criterion in task.success_criteria:
+            content += f"- {criterion}\n"
+        
+        self.active_path.write_text(content)
+        task.raw_content = content

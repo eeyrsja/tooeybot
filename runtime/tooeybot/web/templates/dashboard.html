@@ -71,6 +71,47 @@
         </div>
     </div>
 
+    <!-- Messages Status -->
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <!-- Unread Messages -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">💬 Unread Messages</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight {% if message_stats and message_stats.unread_for_user > 0 %}text-indigo-600{% else %}text-gray-400{% endif %}">
+                {{ message_stats.unread_for_user if message_stats else 0 }}
+            </dd>
+            <dd class="mt-1">
+                <a href="/messages" class="text-xs text-indigo-600 hover:text-indigo-500">View messages →</a>
+            </dd>
+        </div>
+        
+        <!-- Waiting for You -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">⏳ Waiting for You</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight {% if message_stats and message_stats.waiting_user > 0 %}text-amber-600{% else %}text-gray-400{% endif %}">
+                {{ message_stats.waiting_user if message_stats else 0 }}
+            </dd>
+            <dd class="mt-1 text-xs text-gray-400">Questions from agent</dd>
+        </div>
+        
+        <!-- Waiting for Agent -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">🤖 Waiting for Agent</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight {% if message_stats and message_stats.waiting_agent > 0 %}text-blue-600{% else %}text-gray-400{% endif %}">
+                {{ message_stats.waiting_agent if message_stats else 0 }}
+            </dd>
+            <dd class="mt-1 text-xs text-gray-400">Your instructions</dd>
+        </div>
+        
+        <!-- Open Threads -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">📋 Open Threads</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-600">
+                {{ message_stats.open_threads if message_stats else 0 }}
+            </dd>
+            <dd class="mt-1 text-xs text-gray-400">Active conversations</dd>
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <!-- Active Task -->
         <div class="overflow-hidden rounded-lg bg-white shadow">

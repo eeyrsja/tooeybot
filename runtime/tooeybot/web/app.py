@@ -34,6 +34,7 @@ from tooeybot.maintenance import MaintenanceManager
 from tooeybot.cycle import CycleHistory
 from tooeybot.curiosity import CuriosityManager
 from tooeybot.budgets import AgentBudgets, BudgetEnforcer
+from tooeybot.messaging import MessageManager, MessageType, MessageSender
 
 
 @asynccontextmanager
@@ -160,6 +161,10 @@ async def dashboard(request: Request):
     # Task origin breakdown
     task_origins = task_mgr.count_by_origin()
     
+    # Get message stats
+    msg_mgr = MessageManager(home)
+    message_stats = msg_mgr.get_stats()
+    
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "pending_count": len(pending_tasks),
@@ -174,6 +179,7 @@ async def dashboard(request: Request):
         "curiosity_stats": curiosity_stats,
         "cycle_count": cycle_count,
         "task_origins": task_origins,
+        "message_stats": message_stats,
     })
 
 
@@ -389,6 +395,145 @@ async def curiosity_page(request: Request):
             "min_value": cfg.curiosity.min_value_threshold,
         },
     })
+
+
+# ============================================================================
+# Messages (Async Communication)
+# ============================================================================
+
+@app.get("/messages", response_class=HTMLResponse)
+async def messages_page(request: Request):
+    """Messages inbox - async communication between user and agent."""
+    home = get_agent_home()
+    msg_mgr = MessageManager(home)
+    
+    # Get threads and stats
+    threads = msg_mgr.get_all_threads()
+    stats = msg_mgr.get_stats()
+    
+    # Mark which threads have unread messages
+    unread_for_user = {m.thread_id for m in msg_mgr.get_unread_for_user()}
+    
+    return templates.TemplateResponse("messages.html", {
+        "request": request,
+        "threads": threads,
+        "stats": stats,
+        "unread_threads": unread_for_user,
+        "selected_thread": None,
+        "messages": [],
+    })
+
+
+@app.get("/messages/{thread_id}", response_class=HTMLResponse)
+async def messages_thread_page(request: Request, thread_id: str):
+    """View a specific message thread."""
+    home = get_agent_home()
+    msg_mgr = MessageManager(home)
+    
+    # Get all threads for sidebar
+    threads = msg_mgr.get_all_threads()
+    stats = msg_mgr.get_stats()
+    unread_for_user = {m.thread_id for m in msg_mgr.get_unread_for_user()}
+    
+    # Get messages for this thread
+    thread_messages = msg_mgr.get_thread_messages(thread_id)
+    
+    # Mark as read
+    msg_mgr.mark_thread_read(thread_id, for_user=True)
+    
+    # Find the thread object
+    selected_thread = None
+    for t in threads:
+        if t.id == thread_id:
+            selected_thread = t
+            break
+    
+    return templates.TemplateResponse("messages.html", {
+        "request": request,
+        "threads": threads,
+        "stats": stats,
+        "unread_threads": unread_for_user,
+        "selected_thread": selected_thread,
+        "messages": thread_messages,
+    })
+
+
+@app.post("/messages/reply", response_class=RedirectResponse)
+async def messages_reply(
+    request: Request,
+    thread_id: str = Form(...),
+    reply_to: str = Form(None),
+    message_type: str = Form("answer"),
+    body: str = Form(...),
+):
+    """Submit a reply to a thread."""
+    home = get_agent_home()
+    msg_mgr = MessageManager(home)
+    
+    # Determine message type
+    msg_type = MessageType.ANSWER
+    if message_type == "instruction":
+        msg_type = MessageType.INSTRUCTION
+    elif message_type == "clarification":
+        msg_type = MessageType.CLARIFICATION
+    
+    # Get thread for subject
+    threads = msg_mgr._load_threads()
+    subject = threads[thread_id].subject if thread_id in threads else "Reply"
+    
+    msg_mgr.send_user_message(
+        message_type=msg_type,
+        subject=f"Re: {subject}",
+        body=body,
+        thread_id=thread_id,
+        reply_to=reply_to,
+    )
+    
+    return RedirectResponse(url=f"/messages/{thread_id}", status_code=303)
+
+
+@app.post("/messages/new", response_class=RedirectResponse)
+async def messages_new(
+    request: Request,
+    subject: str = Form(...),
+    body: str = Form(...),
+    task_id: str = Form(None),
+):
+    """Create a new message/instruction to the agent."""
+    home = get_agent_home()
+    msg_mgr = MessageManager(home)
+    
+    msg = msg_mgr.send_user_message(
+        message_type=MessageType.INSTRUCTION,
+        subject=subject,
+        body=body,
+        task_id=task_id if task_id else None,
+    )
+    
+    return RedirectResponse(url=f"/messages/{msg.thread_id}", status_code=303)
+
+
+@app.post("/messages/{thread_id}/close", response_class=RedirectResponse)
+async def messages_close_thread(request: Request, thread_id: str):
+    """Close a message thread."""
+    home = get_agent_home()
+    msg_mgr = MessageManager(home)
+    msg_mgr.close_thread(thread_id)
+    return RedirectResponse(url="/messages", status_code=303)
+
+
+@app.get("/api/messages")
+async def api_messages():
+    """Get message stats and pending questions."""
+    home = get_agent_home()
+    msg_mgr = MessageManager(home)
+    
+    return {
+        "stats": msg_mgr.get_stats(),
+        "pending_questions": [m.to_dict() for m in msg_mgr.get_pending_questions()],
+        "unread_for_user": [m.to_dict() for m in msg_mgr.get_unread_for_user()],
+        "unread_for_agent": [m.to_dict() for m in msg_mgr.get_unread_for_agent()],
+    }
 
 
 # ============================================================================

@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}Messages - Tooeybot{% endblock %}
+{% block header %}Messages{% endblock %}
+
+{% block content %}
+<div class="flex h-[calc(100vh-12rem)] gap-6">
+    <!-- Thread List Sidebar -->
+    <div class="w-1/3 flex flex-col overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-medium text-gray-900">Conversations</h3>
+            <button onclick="document.getElementById('newMessageModal').classList.remove('hidden')" 
+                class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                ✉️ New
+            </button>
+        </div>
+        
+        <!-- Stats bar -->
+        <div class="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs text-gray-500 flex justify-between">
+            <span>📬 {{ stats.unread_for_user }} unread</span>
+            <span>⏳ {{ stats.waiting_user }} waiting</span>
+            <span>📨 {{ stats.total_messages }} total</span>
+        </div>
+        
+        <!-- Thread list -->
+        <div class="flex-1 overflow-y-auto divide-y divide-gray-200">
+            {% if threads %}
+            {% for thread in threads %}
+            <a href="/messages/{{ thread.id }}" 
+               class="block px-4 py-3 hover:bg-gray-50 {% if selected_thread and selected_thread.id == thread.id %}bg-indigo-50{% endif %}">
+                <div class="flex items-center justify-between">
+                    <span class="font-medium text-gray-900 truncate {% if thread.id in unread_threads %}text-indigo-700{% endif %}">
+                        {% if thread.id in unread_threads %}●{% endif %}
+                        {{ thread.subject[:40] }}{% if thread.subject|length > 40 %}...{% endif %}
+                    </span>
+                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                        {% if thread.status == 'waiting_user' %}bg-amber-100 text-amber-800
+                        {% elif thread.status == 'waiting_agent' %}bg-blue-100 text-blue-800
+                        {% elif thread.status == 'closed' %}bg-gray-100 text-gray-600
+                        {% else %}bg-green-100 text-green-800{% endif %}">
+                        {{ thread.status }}
+                    </span>
+                </div>
+                <div class="mt-1 flex items-center justify-between text-xs text-gray-500">
+                    <span>{{ thread.message_count }} messages</span>
+                    <span>{{ thread.updated_at[:10] }}</span>
+                </div>
+                {% if thread.task_id %}
+                <div class="mt-1 text-xs text-gray-400">
+                    Task: {{ thread.task_id }}
+                </div>
+                {% endif %}
+            </a>
+            {% endfor %}
+            {% else %}
+            <div class="p-4 text-center text-gray-500">
+                <p>No conversations yet</p>
+                <p class="text-xs mt-1">Messages from the agent will appear here</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Message View -->
+    <div class="flex-1 flex flex-col overflow-hidden rounded-lg bg-white shadow">
+        {% if selected_thread %}
+        <!-- Thread header -->
+        <div class="px-4 py-3 border-b border-gray-200">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900">{{ selected_thread.subject }}</h3>
+                    <div class="text-xs text-gray-500 mt-1">
+                        {% if selected_thread.task_id %}
+                        Related to task: <span class="font-medium">{{ selected_thread.task_id }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                        {% if selected_thread.status == 'waiting_user' %}bg-amber-100 text-amber-800
+                        {% elif selected_thread.status == 'waiting_agent' %}bg-blue-100 text-blue-800
+                        {% elif selected_thread.status == 'closed' %}bg-gray-100 text-gray-600
+                        {% else %}bg-green-100 text-green-800{% endif %}">
+                        {{ selected_thread.status }}
+                    </span>
+                    {% if selected_thread.status != 'closed' %}
+                    <form action="/messages/{{ selected_thread.id }}/close" method="post" class="inline">
+                        <button type="submit" class="text-xs text-gray-400 hover:text-gray-600">Close</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Messages -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+            {% for msg in messages %}
+            <div class="{% if msg.sender.value == 'agent' %}mr-12{% else %}ml-12{% endif %}">
+                <div class="rounded-lg p-3 
+                    {% if msg.sender.value == 'agent' %}bg-gray-100{% else %}bg-indigo-50{% endif %}">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center space-x-2">
+                            <span class="font-medium text-sm
+                                {% if msg.sender.value == 'agent' %}text-gray-700{% else %}text-indigo-700{% endif %}">
+                                {% if msg.sender.value == 'agent' %}🤖 Agent{% else %}👤 You{% endif %}
+                            </span>
+                            <span class="inline-flex items-center rounded px-1.5 py-0.5 text-xs
+                                {% if msg.message_type.value == 'question' %}bg-amber-100 text-amber-700
+                                {% elif msg.message_type.value == 'answer' %}bg-green-100 text-green-700
+                                {% elif msg.message_type.value == 'instruction' %}bg-blue-100 text-blue-700
+                                {% elif msg.message_type.value == 'status' %}bg-purple-100 text-purple-700
+                                {% elif msg.message_type.value == 'completion' %}bg-green-100 text-green-700
+                                {% else %}bg-gray-100 text-gray-700{% endif %}">
+                                {{ msg.message_type.value }}
+                            </span>
+                        </div>
+                        <span class="text-xs text-gray-400">{{ msg.timestamp[:16] }}</span>
+                    </div>
+                    <div class="text-sm text-gray-800 whitespace-pre-wrap">{{ msg.body }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Reply form -->
+        {% if selected_thread.status != 'closed' %}
+        <div class="border-t border-gray-200 p-4">
+            <form action="/messages/reply" method="post" class="space-y-3">
+                <input type="hidden" name="thread_id" value="{{ selected_thread.id }}">
+                {% if messages %}
+                <input type="hidden" name="reply_to" value="{{ messages[-1].id }}">
+                {% endif %}
+                
+                <div class="flex items-center space-x-4">
+                    <label class="text-sm text-gray-600">Reply as:</label>
+                    <select name="message_type" class="text-sm rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 border p-1">
+                        <option value="answer">Answer</option>
+                        <option value="instruction">Instruction</option>
+                        <option value="clarification">Clarification</option>
+                    </select>
+                </div>
+                
+                <textarea name="body" rows="3" required
+                    placeholder="Type your reply..."
+                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"></textarea>
+                
+                <div class="flex justify-end">
+                    <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        Send Reply
+                    </button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+        
+        {% else %}
+        <!-- No thread selected -->
+        <div class="flex-1 flex items-center justify-center text-gray-500">
+            <div class="text-center">
+                <p class="text-4xl mb-4">💬</p>
+                <p>Select a conversation to view</p>
+                <p class="text-xs mt-2">Or click "New" to send a message to the agent</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- New Message Modal -->
+<div id="newMessageModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
+        <div class="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+            <h3 class="text-lg font-medium text-gray-900">New Message to Agent</h3>
+            <button onclick="document.getElementById('newMessageModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                ✕
+            </button>
+        </div>
+        <form action="/messages/new" method="post" class="p-4 space-y-4">
+            <div>
+                <label for="subject" class="block text-sm font-medium text-gray-700">Subject</label>
+                <input type="text" name="subject" id="subject" required
+                    placeholder="What is this about?"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2">
+            </div>
+            
+            <div>
+                <label for="task_id" class="block text-sm font-medium text-gray-700">Related Task (optional)</label>
+                <input type="text" name="task_id" id="task_id"
+                    placeholder="e.g., setup-backup"
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2">
+            </div>
+            
+            <div>
+                <label for="body" class="block text-sm font-medium text-gray-700">Message</label>
+                <textarea name="body" id="body" rows="4" required
+                    placeholder="Instructions or information for the agent..."
+                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"></textarea>
+            </div>
+            
+            <div class="flex justify-end space-x-3">
+                <button type="button" onclick="document.getElementById('newMessageModal').classList.add('hidden')"
+                    class="inline-flex items-center rounded-md bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-200">
+                    Cancel
+                </button>
+                <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                    Send Message
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
