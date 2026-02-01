@@ -202,6 +202,15 @@ Deadline: {task.deadline or 'None'}
         system_prompt = """You are Tooeybot, an autonomous agent running in a Linux sandbox.
 You process tasks by reasoning about them and executing shell commands.
 
+IMPORTANT: Use actual bash/shell commands, not abstract skill names.
+Examples of correct commands:
+- To write a file: echo "content" > /path/to/file.txt
+- To read a file: cat /path/to/file.txt
+- To create a directory: mkdir -p /path/to/dir
+- To append to a file: echo "content" >> /path/to/file.txt
+
+Do NOT use 'write_file', 'read_file', or 'log_event' as commands - these are conceptual skills, not shell commands.
+
 When you need to execute commands, format them as:
 ```bash
 <command>
