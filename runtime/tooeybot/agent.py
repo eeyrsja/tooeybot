@@ -237,32 +237,26 @@ class Agent:
         # Load budget state for recovery
         self.budget_enforcer.load_state()
         
-        # Check for pending user messages first
-        pending_messages = self.messaging.get_unread_for_agent()
-        user_reply_content = None
-        if pending_messages:
-            # Process user messages and extract reply content
-            user_reply_content = self._process_user_messages(pending_messages)
-        
-        # Check for active task
+        # Check for active task first
         task = self.tasks.get_active_task()
         
-        # Check if task is waiting for user
+        # Check if task is waiting for user response
         if task and task.status == "waiting_user":
-            # Check if we got a response
-            if not pending_messages:
-                logger.info(f"Task {task.task_id} waiting for user response")
+            user_reply_content = self._check_for_user_reply(task.task_id)
+            
+            if user_reply_content is None:
+                logger.info(f"Task {task.task_id} still waiting for user response")
                 return TickResult(
                     success=True,
                     task_processed=task.task_id,
                     message="Task waiting for user response"
                 )
-            # User responded, resume the task with their reply
+            
+            # User responded, resume the task
             logger.info(f"User responded, resuming task {task.task_id}")
             task.status = "active"
             # Add user reply to task context
-            if user_reply_content:
-                task.context = f"{task.context}\n\n## User Reply\n{user_reply_content}" if task.context else f"## User Reply\n{user_reply_content}"
+            task.context = f"{task.context}\n\n## User Reply\n{user_reply_content}" if task.context else f"## User Reply\n{user_reply_content}"
             self.tasks.update_task(task)
         
         # If no active task, get next from inbox
@@ -595,6 +589,48 @@ class Agent:
         self.messaging._save_threads(threads)
         
         return "\n\n".join(reply_parts) if reply_parts else None
+    
+    def _check_for_user_reply(self, task_id: str) -> Optional[str]:
+        """
+        Check if the user has replied to the agent's question for this task.
+        
+        Returns the reply content if found, None otherwise.
+        """
+        # First check for unread messages from user
+        pending_messages = self.messaging.get_unread_for_agent()
+        logger.info(f"Checking for reply: {len(pending_messages)} unread user messages")
+        
+        if pending_messages:
+            # Process and return the reply content
+            return self._process_user_messages(pending_messages)
+        
+        # If no unread messages, check if there are threads waiting for agent
+        # (this means user replied but the message may have been viewed in UI)
+        threads_waiting = self.messaging.get_threads_waiting_agent()
+        logger.info(f"Threads waiting for agent: {len(threads_waiting)}")
+        
+        if threads_waiting:
+            # Find threads related to this task
+            for thread in threads_waiting:
+                if thread.task_id == task_id or thread.task_id is None:
+                    # Get the latest user message from this thread
+                    thread_messages = self.messaging.get_thread_messages(thread.id)
+                    user_messages = [m for m in thread_messages if m.sender.value == "user"]
+                    if user_messages:
+                        latest = user_messages[-1]  # Last message in thread
+                        logger.info(f"Found user reply in thread {thread.id}: {latest.subject}")
+                        
+                        # Update thread status
+                        threads = self.messaging._load_threads()
+                        if thread.id in threads:
+                            threads[thread.id].status = "open"
+                            threads[thread.id].updated_at = self.messaging._now()
+                            self.messaging._save_threads(threads)
+                        
+                        return f"**{latest.message_type.value}**: {latest.body}"
+        
+        # No reply found
+        return None
     
     def ask_user(
         self,
