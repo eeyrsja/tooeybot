@@ -67,19 +67,21 @@ class Task:
             "created_at": self.created_at.isoformat(),
             "iteration_count": self.iteration_count,
             "curiosity_depth": self.curiosity_depth,
+            "status": self.status,
         }
 
 
 class TaskParser:
     """Parses tasks from the inbox file."""
     
-    # Updated pattern to capture origin and parent_task
+    # Updated pattern to capture origin, parent_task, and status
     TASK_PATTERN = re.compile(
         r'---\s*\n'
         r'task_id:\s*(\S+)\s*\n'
         r'priority:\s*(\w+)\s*\n'
         r'(?:deadline:\s*([^\n]+)\s*\n)?'
         r'(?:origin:\s*(\w+)\s*\n)?'
+        r'(?:status:\s*(\w+)\s*\n)?'
         r'(?:parent_task:\s*(\S+)\s*\n)?'
         r'(?:curiosity_category:\s*(\w+)\s*\n)?'
         r'(?:curiosity_depth:\s*(\d+)\s*\n)?'
@@ -100,11 +102,12 @@ class TaskParser:
             priority = match.group(2).lower()
             deadline_str = match.group(3)
             origin_str = match.group(4) or "user"
-            parent_task_id = match.group(5)
-            # curiosity_category = match.group(6)  # Available if needed
-            curiosity_depth_str = match.group(7)
-            context = (match.group(8) or "").strip()
-            body = match.group(9).strip()
+            status_str = match.group(5) or "pending"
+            parent_task_id = match.group(6)
+            # curiosity_category = match.group(7)  # Available if needed
+            curiosity_depth_str = match.group(8)
+            context = (match.group(9) or "").strip()
+            body = match.group(10).strip()
             
             # Parse deadline
             deadline = None
@@ -157,6 +160,7 @@ class TaskParser:
                 origin=origin,
                 parent_task_id=parent_task_id,
                 curiosity_depth=curiosity_depth,
+                status=status_str,
             ))
         
         # Sort by priority
