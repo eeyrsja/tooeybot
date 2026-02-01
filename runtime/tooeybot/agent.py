@@ -276,19 +276,24 @@ Follow your invariants and operating principles at all times."""
         commands = re.findall(r'```bash\n(.*?)```', llm_output, re.DOTALL)
         
         for cmd_block in commands:
-            for line in cmd_block.strip().split('\n'):
-                line = line.strip()
-                if line and not line.startswith('#'):
-                    result = self.executor.execute(
-                        command="bash",
-                        args=["-c", line],
-                        task_id=task.task_id,
-                        skill="execute_command"
-                    )
-                    
-                    if result.exit_code != 0:
-                        logger.warning(f"Command failed: {line}")
-                        logger.warning(f"Stderr: {result.stderr}")
+            # Execute the entire block as a single script, not line-by-line
+            script = cmd_block.strip()
+            if script:
+                logger.info(f"Executing bash script ({len(script)} chars)")
+                result = self.executor.execute(
+                    command="bash",
+                    args=["-c", script],
+                    task_id=task.task_id,
+                    skill="execute_command"
+                )
+                
+                if result.exit_code != 0:
+                    logger.warning(f"Script failed with exit code {result.exit_code}")
+                    logger.warning(f"Stderr: {result.stderr}")
+                else:
+                    logger.info(f"Script completed successfully")
+                    if result.stdout:
+                        logger.debug(f"Stdout: {result.stdout[:500]}")
         
         # Check for completion markers
         if "TASK_COMPLETE:" in llm_output:
