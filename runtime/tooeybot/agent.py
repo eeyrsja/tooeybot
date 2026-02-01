@@ -230,9 +230,24 @@ Follow your invariants and operating principles at all times."""
             Message(role="user", content=f"# Agent Context\n\n{full_context}\n\n---\n\nProcess the current task. What is your plan and what commands will you execute?")
         ]
         
+        # Debug: log what we're sending to the LLM
+        logger.debug("=" * 60)
+        logger.debug("SYSTEM PROMPT:")
+        logger.debug(system_prompt)
+        logger.debug("=" * 60)
+        logger.debug("USER MESSAGE:")
+        logger.debug(messages[1].content)
+        logger.debug("=" * 60)
+        
         try:
             response = self.llm.chat(messages, temperature=0.7)
             llm_output = response.content
+            
+            # Debug: log what we got back
+            logger.debug("=" * 60)
+            logger.debug("LLM RESPONSE:")
+            logger.debug(llm_output)
+            logger.debug("=" * 60)
             
             logger.info(f"LLM response tokens: {response.usage.get('total_tokens', 'unknown')}")
             
