@@ -221,11 +221,14 @@ When you need to execute commands, format them as:
 <command>
 ```
 
-When you have completed the task, end with:
-TASK_COMPLETE: <brief summary>
+After providing the commands, ALWAYS include a completion marker:
+- If commands will complete the task: TASK_COMPLETE: <brief summary>
+- If you cannot complete the task: TASK_BLOCKED: <reason>
 
-If you cannot complete the task, end with:
-TASK_BLOCKED: <reason>
+Format:
+1. Explain your plan
+2. Provide bash commands
+3. State TASK_COMPLETE or TASK_BLOCKED
 
 Always explain your reasoning before executing commands.
 Follow your invariants and operating principles at all times."""
