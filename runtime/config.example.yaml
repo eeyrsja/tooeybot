@@ -9,7 +9,7 @@ llm:
   provider: openai
   
   # Model name
-  model: gpt-5-min
+  model: gpt-5-mini
   
   # Provider-specific settings
   ollama:

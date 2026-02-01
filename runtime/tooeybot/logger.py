@@ -188,6 +188,21 @@ class EventLogger:
             outcomes=EventOutcomes(observations=f"Agent stopped: {reason}")
         )
         self.log(event)
+    
+    def log_event(
+        self,
+        event_type: str,
+        data: dict,
+        level: str = "INFO",
+        task_id: Optional[str] = None
+    ) -> None:
+        """Generic event logging for any event type."""
+        event = Event(
+            event_type=event_type,
+            context=EventContext(task_id=task_id),
+            outcomes=EventOutcomes(observations=json.dumps(data))
+        )
+        self.log(event)
 
 
 def setup_logging(config: LoggingConfig) -> None:
