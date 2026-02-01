@@ -239,9 +239,10 @@ class Agent:
         
         # Check for pending user messages first
         pending_messages = self.messaging.get_unread_for_agent()
+        user_reply_content = None
         if pending_messages:
-            # Process user messages before continuing
-            self._process_user_messages(pending_messages)
+            # Process user messages and extract reply content
+            user_reply_content = self._process_user_messages(pending_messages)
         
         # Check for active task
         task = self.tasks.get_active_task()
@@ -256,8 +257,12 @@ class Agent:
                     task_processed=task.task_id,
                     message="Task waiting for user response"
                 )
-            # User responded, resume the task
+            # User responded, resume the task with their reply
+            logger.info(f"User responded, resuming task {task.task_id}")
             task.status = "active"
+            # Add user reply to task context
+            if user_reply_content:
+                task.context = f"{task.context}\n\n## User Reply\n{user_reply_content}" if task.context else f"## User Reply\n{user_reply_content}"
             self.tasks.update_task(task)
         
         # If no active task, get next from inbox
@@ -551,13 +556,16 @@ class Agent:
         """Get curiosity system statistics."""
         return self.curiosity_manager.get_daily_stats()
     
-    def _process_user_messages(self, messages: List[Any]) -> None:
+    def _process_user_messages(self, messages: List[Any]) -> Optional[str]:
         """
         Process incoming user messages.
         
-        Marks messages as read and logs them.
-        The actual interpretation happens in the cycle's context.
+        Marks messages as read, updates thread status, and logs them.
+        Returns the combined content of all replies for context.
         """
+        reply_parts = []
+        processed_threads = set()
+        
         for msg in messages:
             self.messaging.mark_read(msg.id)
             self.event_logger.log_event(
@@ -570,6 +578,23 @@ class Agent:
                 level="INFO"
             )
             logger.info(f"Received user message: {msg.subject}")
+            
+            # Collect reply content
+            reply_parts.append(f"**{msg.message_type.value}**: {msg.body}")
+            
+            # Track thread for status update
+            if msg.thread_id:
+                processed_threads.add(msg.thread_id)
+        
+        # Update thread status to show agent has received the reply
+        threads = self.messaging._load_threads()
+        for thread_id in processed_threads:
+            if thread_id in threads:
+                threads[thread_id].status = "open"  # Agent is now working on it
+                threads[thread_id].updated_at = self.messaging._now()
+        self.messaging._save_threads(threads)
+        
+        return "\n\n".join(reply_parts) if reply_parts else None
     
     def ask_user(
         self,
