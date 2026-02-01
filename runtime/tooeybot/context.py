@@ -12,6 +12,7 @@ import logging
 
 if TYPE_CHECKING:
     from .skills import SkillManager
+    from .beliefs import BeliefManager
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,17 @@ class ContextAssembler:
     # Rough estimate: 1 token ≈ 4 characters
     CHARS_PER_TOKEN = 4
     
-    def __init__(self, agent_home: Path, max_tokens: int = 6000, skill_manager: "SkillManager" = None):
+    def __init__(
+        self, 
+        agent_home: Path, 
+        max_tokens: int = 6000, 
+        skill_manager: "SkillManager" = None,
+        belief_manager: "BeliefManager" = None
+    ):
         self.agent_home = agent_home
         self.max_tokens = max_tokens
         self.skill_manager = skill_manager
+        self.belief_manager = belief_manager
         self.boot_dir = agent_home / "boot"
         self.memory_dir = agent_home / "memory"
         self.skills_dir = agent_home / "skills"
@@ -156,6 +164,18 @@ class ContextAssembler:
                         tier="high",
                         priority=5,
                         token_estimate=self.estimate_tokens(skills_content)
+                    ))
+            
+            # Add active beliefs
+            if self.belief_manager:
+                beliefs_content = self.belief_manager.get_beliefs_for_context()
+                if beliefs_content:
+                    all_items.append(ContextItem(
+                        name="active_beliefs",
+                        content=beliefs_content,
+                        tier="high",
+                        priority=6,
+                        token_estimate=self.estimate_tokens(beliefs_content)
                     ))
         
         # Add high priority

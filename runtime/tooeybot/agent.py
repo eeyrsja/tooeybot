@@ -16,6 +16,7 @@ from .executor import Executor
 from .context import ContextAssembler
 from .tasks import TaskManager, Task
 from .skills import SkillManager
+from .beliefs import BeliefManager
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +46,12 @@ class Agent:
             timeout=config.execution.command_timeout
         )
         self.skill_manager = SkillManager(self.agent_home)
+        self.belief_manager = BeliefManager(self.agent_home)
         self.context = ContextAssembler(
             self.agent_home,
             max_tokens=config.context.max_tokens - config.context.response_reserve,
-            skill_manager=self.skill_manager
+            skill_manager=self.skill_manager,
+            belief_manager=self.belief_manager
         )
         self.tasks = TaskManager(self.agent_home)
     
@@ -294,6 +297,20 @@ Format your response as:
             # Record skill usage for relevant skills
             for skill_name in used_skill_names:
                 self.skill_manager.record_skill_use(skill_name, success=execution_success)
+            
+            # Extract beliefs from task outcome
+            try:
+                extracted_beliefs = self.belief_manager.extract_beliefs_from_outcome(
+                    task_id=task.task_id,
+                    task_description=task.description,
+                    outcome=llm_output,
+                    success=execution_success,
+                    llm_provider=self.llm
+                )
+                if extracted_beliefs:
+                    logger.info(f"Extracted {len(extracted_beliefs)} beliefs from task outcome")
+            except Exception as e:
+                logger.warning(f"Belief extraction failed: {e}")
             
             self.tasks.complete_task(
                 task,

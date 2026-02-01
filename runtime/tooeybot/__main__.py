@@ -11,6 +11,7 @@ from .agent import Agent
 from .logger import setup_logging
 from .maintenance import MaintenanceManager
 from .skills import SkillManager
+from .beliefs import BeliefManager
 
 
 def main():
@@ -144,6 +145,62 @@ def main():
         required=True,
         help="Step-by-step procedure"
     )
+    
+    # --- Phase 3: Belief Commands ---
+    
+    # belief-list command - list all beliefs
+    belief_list_parser = subparsers.add_parser("belief-list", help="List all beliefs")
+    belief_list_parser.add_argument(
+        "--status", "-s",
+        type=str,
+        choices=["active", "contested", "deprecated", "all"],
+        default="all",
+        help="Filter by status"
+    )
+    
+    # belief-add command - add a new belief
+    belief_add_parser = subparsers.add_parser("belief-add", help="Add a new belief")
+    belief_add_parser.add_argument(
+        "claim",
+        type=str,
+        help="The belief claim"
+    )
+    belief_add_parser.add_argument(
+        "--confidence", "-c",
+        type=float,
+        default=0.7,
+        help="Confidence level (0.0-1.0)"
+    )
+    belief_add_parser.add_argument(
+        "--type", "-t",
+        type=str,
+        choices=["observed", "inferred", "external"],
+        default="external",
+        help="Belief type"
+    )
+    belief_add_parser.add_argument(
+        "--source", "-s",
+        type=str,
+        default=None,
+        help="Source of the belief"
+    )
+    
+    # belief-contest command - contest a belief
+    belief_contest_parser = subparsers.add_parser("belief-contest", help="Contest a belief")
+    belief_contest_parser.add_argument(
+        "belief_id",
+        type=str,
+        help="Belief ID (e.g., B-000001)"
+    )
+    belief_contest_parser.add_argument(
+        "--reason", "-r",
+        type=str,
+        required=True,
+        help="Reason for contesting"
+    )
+    
+    # coherence-check command - run coherence check
+    coherence_parser = subparsers.add_parser("coherence-check", help="Run coherence check on beliefs")
     
     args = parser.parse_args()
     
@@ -339,7 +396,93 @@ def main():
         print("   1. Edit the skill file to add validation and failure modes")
         print("   2. Use the skill 3+ times successfully")
         print("   3. Run 'tooeybot skill-promote {name}' to promote it")
+    
+    # --- Phase 3: Belief Commands ---
+    
+    elif args.command == "belief-list":
+        belief_mgr = BeliefManager(config.agent_home)
+        
+        if args.status == "all":
+            beliefs = belief_mgr.get_all_beliefs()
+        else:
+            beliefs = belief_mgr.get_all_beliefs(status=args.status)
+        
+        if not beliefs:
+            print(f"No beliefs found with status: {args.status}")
+            sys.exit(0)
+        
+        # Group by status
+        by_status = {}
+        for belief in beliefs:
+            by_status.setdefault(belief.status, []).append(belief)
+        
+        for status, belief_list in by_status.items():
+            print(f"\n📚 {status.upper()} BELIEFS:")
+            for b in belief_list:
+                conf_icon = "🟢" if b.confidence >= 0.8 else "🟡" if b.confidence >= 0.5 else "🔴"
+                print(f"   {conf_icon} {b.belief_id} ({b.confidence:.2f}): {b.claim[:60]}...")
+                if b.contradictions:
+                    print(f"      ⚠️ Contradicts: {', '.join(b.contradictions)}")
+    
+    elif args.command == "belief-add":
+        belief_mgr = BeliefManager(config.agent_home)
+        
+        belief = belief_mgr.add_belief(
+            claim=args.claim,
+            confidence=args.confidence,
+            belief_type=args.type,
+            source=args.source or "CLI input"
+        )
+        
+        print(f"✅ Added belief: {belief.belief_id}")
+        print(f"   Claim: {belief.claim}")
+        print(f"   Confidence: {belief.confidence}")
+        print(f"   Type: {belief.belief_type}")
+    
+    elif args.command == "belief-contest":
+        belief_mgr = BeliefManager(config.agent_home)
+        
+        belief = belief_mgr.contest_belief(args.belief_id, args.reason)
+        
+        if belief:
+            print(f"⚠️ Contested belief: {args.belief_id}")
+            print(f"   Reason: {args.reason}")
+        else:
+            print(f"❌ Belief not found: {args.belief_id}")
+            sys.exit(1)
+    
+    elif args.command == "coherence-check":
+        belief_mgr = BeliefManager(config.agent_home)
+        
+        print("🔍 Running coherence check...")
+        
+        # Create LLM provider for contradiction detection
+        from .llm import create_provider
+        llm = create_provider(config.llm)
+        
+        result = belief_mgr.run_coherence_check(llm_provider=llm)
+        
+        print(f"\n📊 Coherence Check Results:")
+        print(f"   Total beliefs: {result['total_beliefs']}")
+        print(f"   Active: {result['active']}")
+        print(f"   Contested: {result['contested']}")
+        print(f"   Low confidence: {len(result['low_confidence'])}")
+        print(f"   Contradictions: {len(result['potential_contradictions'])}")
+        
+        if result['report_path']:
+            print(f"\n📄 Report: {result['report_path']}")
+        
+        if result['low_confidence']:
+            print(f"\n⚠️ Low confidence beliefs need review:")
+            for b in result['low_confidence'][:5]:
+                print(f"   • {b.belief_id}: {b.claim[:50]}...")
+        
+        if result['potential_contradictions']:
+            print(f"\n❌ Potential contradictions found:")
+            for c in result['potential_contradictions']:
+                print(f"   • {c['belief']} conflicts with {c['conflicts_with']}")
 
 
 if __name__ == "__main__":
+    main()if __name__ == "__main__":
     main()
