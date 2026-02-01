@@ -295,29 +295,38 @@ class ReasoningCycle:
     """
     
     # Prompts for each phase
-    PLAN_PROMPT = """You are planning the next step to complete a task.
+    PLAN_PROMPT = """You are an AUTONOMOUS agent planning the next step to complete a task.
 
 ## Current Task
 {task_spec}
+{task_context}
 
-## Previous Cycles Summary
+## Previous Cycles (Recent History)
 {history_summary}
 
 ## Current Iteration
 This is cycle {cycle_num} of maximum {max_cycles}.
 
 ## Instructions
-1. Review the task and any previous progress
+1. Review the task, any previous progress, and learnings from history
 2. Choose EXACTLY ONE action to take next
 3. Be specific and direct
+4. Work AUTONOMOUSLY - make reasonable assumptions and proceed
 
-## Available Actions
-- execute_command: Run a shell command
-- read_file: Read a file's contents
-- write_file: Create or update a file
-- ask_user: Ask the user for clarification
+## Available Actions (in order of preference)
+- execute_command: Run a shell command (PREFERRED - just do it)
+- read_file: Read a file's contents (PREFERRED - gather info yourself)
+- write_file: Create or update a file (PREFERRED - just make changes)
 - complete_task: Declare the task complete
-- block_task: Declare the task blocked
+- block_task: Declare the task blocked (only if truly impossible)
+- ask_user: Ask the user for clarification (LAST RESORT ONLY - use sparingly)
+
+## CRITICAL: Autonomy Principle
+- You should RARELY need to ask the user anything
+- If something is unclear, make a reasonable assumption and proceed
+- Only ask_user when you genuinely cannot proceed without user input
+- Prefer exploration and experimentation over questions
+- If you've asked a question before, the answer should be in the history - DO NOT ask again
 
 ## Response Format (JSON only)
 {{
@@ -329,7 +338,7 @@ This is cycle {cycle_num} of maximum {max_cycles}.
             "command": "...",  // for execute_command
             "path": "...",     // for read_file or write_file
             "content": "...",  // for write_file
-            "question": "...", // for ask_user
+            "question": "...", // for ask_user (LAST RESORT)
             "summary": "..."   // for complete_task or block_task
         }},
         "reasoning": "Why this action"
@@ -344,6 +353,7 @@ Respond with ONLY the JSON, no other text."""
 
 ## Task
 {task_description}
+{task_context}
 
 ## Action Taken
 Type: {action_type}
@@ -368,22 +378,14 @@ Analyze what happened and respond in JSON format:
     "stuck_indicators": ["any signs you're stuck"],
     "confidence": 0.0-1.0,
     "next_step_suggestion": "What should happen next",
-    "proposed_tasks": [
-        {{
-            "description": "A valuable follow-up task",
-            "justification": "Why this is worth doing",
-            "priority": "low",
-            "estimated_value": 0.7,
-            "category": "verification|documentation|robustness|exploration"
-        }}
-    ]
+    "proposed_tasks": []
 }}
 
 IMPORTANT:
-- Only propose tasks that genuinely add value
-- Each proposal needs real justification
 - Be honest about whether progress was made
 - Flag any stuck patterns you notice
+- Keep working AUTONOMOUSLY - don't suggest asking users for help
+- proposed_tasks should almost always be empty unless there's truly valuable follow-up work
 
 Respond with ONLY the JSON, no other text."""
 
@@ -401,11 +403,17 @@ Cycles used: {cycles_used}/{max_cycles}
 Failures: {failures}/{max_failures}
 No-progress streak: {no_progress}/{max_no_progress}
 
-## Decision Options
-- CONTINUE: More work is needed, proceed to next cycle
+## Decision Options (in order of preference)
+- CONTINUE: More work is needed, proceed to next cycle (DEFAULT - keep working)
 - COMPLETE: The task goal has been achieved
-- BLOCKED: Cannot proceed without external help
-- ASK_USER: Need clarification from the user
+- BLOCKED: Cannot proceed - truly impossible without external resources
+- ASK_USER: LAST RESORT - only when you absolutely cannot make any progress
+
+## CRITICAL: Autonomy Principle
+You are an AUTONOMOUS agent. Your default should be CONTINUE unless the task is done.
+- ASK_USER should be extremely rare - only when genuinely stuck with no alternatives
+- If you're unsure, make a reasonable assumption and CONTINUE
+- Prefer experimentation over asking
 
 Respond with ONLY one word: CONTINUE, COMPLETE, BLOCKED, or ASK_USER"""
 
@@ -516,11 +524,17 @@ Success Criteria:
 {chr(10).join(f'- {c}' for c in self.task.success_criteria) if self.task.success_criteria else '- Complete the task successfully'}
 """
         
+        # Build task context (includes user replies, additional info)
+        task_context = ""
+        if self.task.context:
+            task_context = f"\n## Additional Context / User Replies\n{self.task.context}"
+        
         # Build history summary
         history_summary = self._build_history_summary()
         
         prompt = self.PLAN_PROMPT.format(
             task_spec=task_spec,
+            task_context=task_context,
             history_summary=history_summary,
             cycle_num=self.cycle_id,
             max_cycles=self.agent.budgets.max_iterations_per_task,
@@ -625,8 +639,14 @@ Success Criteria:
         
         history_summary = self._build_history_summary()
         
+        # Build task context (includes user replies)
+        task_context = ""
+        if self.task.context:
+            task_context = f"\n## User Replies / Context\n{self.task.context}"
+        
         prompt = self.REFLECT_PROMPT.format(
             task_description=self.task.description,
+            task_context=task_context,
             action_type=action.action_type.value,
             action_payload=json.dumps(action.payload),
             action_reasoning=action.reasoning,
@@ -692,21 +712,53 @@ Success Criteria:
             return Decision.CONTINUE
     
     def _build_history_summary(self) -> str:
-        """Build a summary of previous cycles."""
+        """Build a rich summary of previous cycles including outputs and learnings."""
         if not self.history:
-            return "No previous cycles."
+            return "No previous cycles. This is a fresh start."
         
         summary_lines = []
         for cycle in self.history[-5:]:  # Last 5 cycles
             action_type = cycle.action.action_type.value if cycle.action else "unknown"
-            success = cycle.observation.success if cycle.observation else "unknown"
-            progress = cycle.reflection.progress_made if cycle.reflection else "unknown"
             
-            summary_lines.append(
-                f"Cycle {cycle.cycle_id}: {action_type} → success={success}, progress={progress}"
-            )
+            # Start with cycle header
+            lines = [f"### Cycle {cycle.cycle_id}: {action_type}"]
+            
+            # Include action details
+            if cycle.action:
+                payload = cycle.action.payload
+                if action_type == "execute_command":
+                    lines.append(f"Command: `{payload.get('command', 'N/A')}`")
+                elif action_type == "read_file":
+                    lines.append(f"File: `{payload.get('path', 'N/A')}`")
+                elif action_type == "write_file":
+                    lines.append(f"Wrote to: `{payload.get('path', 'N/A')}`")
+                elif action_type == "ask_user":
+                    lines.append(f"Question: {payload.get('question', 'N/A')}")
+                if cycle.action.reasoning:
+                    lines.append(f"Reasoning: {cycle.action.reasoning}")
+            
+            # Include observation (truncated)
+            if cycle.observation:
+                success = "✓" if cycle.observation.success else "✗"
+                lines.append(f"Result: {success}")
+                if cycle.observation.output:
+                    output = cycle.observation.output[:500]
+                    if len(cycle.observation.output) > 500:
+                        output += "...(truncated)"
+                    lines.append(f"Output: {output}")
+                if cycle.observation.error:
+                    lines.append(f"Error: {cycle.observation.error}")
+            
+            # Include what was learned
+            if cycle.reflection:
+                if cycle.reflection.what_learned:
+                    lines.append(f"Learned: {cycle.reflection.what_learned}")
+                if not cycle.reflection.progress_made:
+                    lines.append("(No progress this cycle)")
+            
+            summary_lines.append("\n".join(lines))
         
-        return "\n".join(summary_lines)
+        return "\n\n".join(summary_lines)
     
     def _parse_json_response(self, content: str) -> Dict[str, Any]:
         """Parse JSON from LLM response, handling markdown code blocks."""
