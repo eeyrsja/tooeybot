@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Control - Tooeybot{% endblock %}
+{% block header %}Agent Control{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Status Banner -->
+    <div class="overflow-hidden rounded-lg shadow
+        {% if agent_status == 'running' %}bg-green-500
+        {% elif agent_status == 'idle' %}bg-blue-500
+        {% elif agent_status == 'error' %}bg-red-500
+        {% else %}bg-gray-500{% endif %}">
+        <div class="px-4 py-6 sm:px-6 text-center">
+            <div class="text-4xl mb-2">
+                {% if agent_status == 'running' %}🏃{% elif agent_status == 'idle' %}😴{% elif agent_status == 'error' %}🚨{% else %}❓{% endif %}
+            </div>
+            <h2 class="text-2xl font-bold text-white">Agent is {{ agent_status|capitalize }}</h2>
+            {% if last_tick %}
+            <p class="text-white/80 mt-1">Last tick: {{ last_tick }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <!-- Trigger Tick -->
+        <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:p-6 text-center">
+                <div class="text-3xl mb-2">⚡</div>
+                <h3 class="text-lg font-medium text-gray-900">Trigger Tick</h3>
+                <p class="text-sm text-gray-500 mt-1">Execute one agent cycle</p>
+                <form action="/control/tick" method="post" class="mt-4">
+                    <button type="submit" class="w-full inline-flex justify-center items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        Run Tick
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Run Maintenance -->
+        <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:p-6 text-center">
+                <div class="text-3xl mb-2">🔧</div>
+                <h3 class="text-lg font-medium text-gray-900">Maintenance</h3>
+                <p class="text-sm text-gray-500 mt-1">Run daily maintenance</p>
+                <form action="/control/maintenance" method="post" class="mt-4">
+                    <button type="submit" class="w-full inline-flex justify-center items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500">
+                        Run Now
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Create Snapshot -->
+        <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:p-6 text-center">
+                <div class="text-3xl mb-2">📸</div>
+                <h3 class="text-lg font-medium text-gray-900">Snapshot</h3>
+                <p class="text-sm text-gray-500 mt-1">Save current state</p>
+                <form action="/control/snapshot" method="post" class="mt-4">
+                    <button type="submit" class="w-full inline-flex justify-center items-center rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">
+                        Create Snapshot
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Coherence Check -->
+        <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:p-6 text-center">
+                <div class="text-3xl mb-2">🧩</div>
+                <h3 class="text-lg font-medium text-gray-900">Coherence</h3>
+                <p class="text-sm text-gray-500 mt-1">Check belief consistency</p>
+                <form action="/control/coherence-check" method="post" class="mt-4">
+                    <button type="submit" class="w-full inline-flex justify-center items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500">
+                        Run Check
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scheduler Status -->
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-900">⏰ Scheduled Tasks</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div class="border rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-gray-900">Daily Maintenance</span>
+                        <span class="text-xs text-green-600">Active</span>
+                    </div>
+                    <p class="text-sm text-gray-500 mt-1">Runs daily at 3:00 AM</p>
+                    {% if next_maintenance %}
+                    <p class="text-xs text-gray-400 mt-2">Next: {{ next_maintenance }}</p>
+                    {% endif %}
+                </div>
+                <div class="border rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-gray-900">Tick Loop</span>
+                        <span class="text-xs {% if tick_enabled %}text-green-600{% else %}text-gray-400{% endif %}">
+                            {{ 'Active' if tick_enabled else 'Manual' }}
+                        </span>
+                    </div>
+                    <p class="text-sm text-gray-500 mt-1">
+                        {% if tick_enabled %}
+                        Runs every {{ tick_interval }} seconds
+                        {% else %}
+                        Triggered manually via web or CLI
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="border rounded-lg p-4">
+                    <div class="flex items-center justify-between">
+                        <span class="font-medium text-gray-900">Snapshots</span>
+                        <span class="text-xs text-green-600">Active</span>
+                    </div>
+                    <p class="text-sm text-gray-500 mt-1">Created during maintenance</p>
+                    {% if last_snapshot %}
+                    <p class="text-xs text-gray-400 mt-2">Last: {{ last_snapshot }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="overflow-hidden rounded-lg bg-red-50 shadow border border-red-200">
+        <div class="px-4 py-5 sm:px-6 border-b border-red-200">
+            <h3 class="text-lg font-medium leading-6 text-red-900">⚠️ Danger Zone</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <!-- Clear Working Memory -->
+                <div class="border border-red-200 rounded-lg p-4 bg-white">
+                    <h4 class="font-medium text-gray-900">Clear Working Memory</h4>
+                    <p class="text-sm text-gray-500 mt-1">Wipes current session state</p>
+                    <form action="/control/clear-working" method="post" class="mt-3">
+                        <button type="submit" 
+                            onclick="return confirm('Clear working memory? The agent will lose current session context.')"
+                            class="w-full inline-flex justify-center items-center rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-200">
+                            🗑️ Clear
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Reset Tasks -->
+                <div class="border border-red-200 rounded-lg p-4 bg-white">
+                    <h4 class="font-medium text-gray-900">Clear All Tasks</h4>
+                    <p class="text-sm text-gray-500 mt-1">Remove all pending tasks</p>
+                    <form action="/control/clear-tasks" method="post" class="mt-3">
+                        <button type="submit"
+                            onclick="return confirm('Clear all tasks? This cannot be undone.')"
+                            class="w-full inline-flex justify-center items-center rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-200">
+                            🗑️ Clear Tasks
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Restore Snapshot -->
+                <div class="border border-red-200 rounded-lg p-4 bg-white">
+                    <h4 class="font-medium text-gray-900">Restore Snapshot</h4>
+                    <p class="text-sm text-gray-500 mt-1">Revert to previous state</p>
+                    <form action="/control/restore" method="post" class="mt-3">
+                        <select name="snapshot" class="w-full rounded-md border-gray-300 text-sm border p-2 mb-2">
+                            {% for snap in snapshots %}
+                            <option value="{{ snap }}">{{ snap }}</option>
+                            {% else %}
+                            <option value="">No snapshots available</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit"
+                            onclick="return confirm('Restore this snapshot? Current state will be overwritten.')"
+                            class="w-full inline-flex justify-center items-center rounded-md bg-red-100 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-200"
+                            {% if not snapshots %}disabled{% endif %}>
+                            ⏪ Restore
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Info -->
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-900">ℹ️ System Info</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                    <dt class="text-sm font-medium text-gray-500">Agent Home</dt>
+                    <dd class="mt-1 text-sm text-gray-900 font-mono">{{ agent_home }}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500">LLM Model</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ llm_model }}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500">Version</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ version }}</dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500">Uptime</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ uptime }}</dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+</div>
+{% endblock %}

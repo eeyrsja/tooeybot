@@ -202,6 +202,28 @@ def main():
     # coherence-check command - run coherence check
     coherence_parser = subparsers.add_parser("coherence-check", help="Run coherence check on beliefs")
     
+    # --- Web UI Command ---
+    
+    # web command - start web interface
+    web_parser = subparsers.add_parser("web", help="Start web interface")
+    web_parser.add_argument(
+        "--host", "-H",
+        type=str,
+        default="0.0.0.0",
+        help="Host to bind to"
+    )
+    web_parser.add_argument(
+        "--port", "-p",
+        type=int,
+        default=8080,
+        help="Port to listen on"
+    )
+    web_parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Enable auto-reload for development"
+    )
+    
     args = parser.parse_args()
     
     # Load configuration
@@ -481,6 +503,21 @@ def main():
             print(f"\n❌ Potential contradictions found:")
             for c in result['potential_contradictions']:
                 print(f"   • {c['belief']} conflicts with {c['conflicts_with']}")
+    
+    elif args.command == "web":
+        print(f"🌐 Starting Tooeybot Web UI on http://{args.host}:{args.port}")
+        print(f"   Agent home: {config.agent_home}")
+        print(f"   Press Ctrl+C to stop\n")
+        
+        import uvicorn
+        from tooeybot.web.app import app
+        
+        uvicorn.run(
+            "tooeybot.web.app:app" if args.reload else app,
+            host=args.host,
+            port=args.port,
+            reload=args.reload
+        )
 
 
 if __name__ == "__main__":

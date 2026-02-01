@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Memory - Tooeybot{% endblock %}
+{% block header %}Memory{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Working Memory -->
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
+            <div>
+                <h3 class="text-lg font-medium leading-6 text-gray-900">🧠 Working Memory</h3>
+                <p class="mt-1 text-sm text-gray-500">Current session state, cleared on restart</p>
+            </div>
+            <form action="/memory/working/clear" method="post" class="inline">
+                <button type="submit" class="text-sm text-red-600 hover:text-red-800"
+                    onclick="return confirm('Clear working memory?')">
+                    🗑️ Clear
+                </button>
+            </form>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <form action="/memory/working" method="post">
+                <textarea name="content" id="working-memory" rows="10"
+                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-mono text-sm border p-3"
+                >{{ working_memory }}</textarea>
+                <div class="mt-3 flex justify-end">
+                    <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        💾 Save Working Memory
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Long-term Memory -->
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-900">📚 Long-term Memory</h3>
+            <p class="mt-1 text-sm text-gray-500">Persistent knowledge accumulated over time</p>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <form action="/memory/longterm" method="post">
+                <textarea name="content" id="longterm-memory" rows="15"
+                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-mono text-sm border p-3"
+                >{{ longterm_memory }}</textarea>
+                <div class="mt-3 flex justify-end">
+                    <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        💾 Save Long-term Memory
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Directory Map -->
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-900">🗺️ Directory Map</h3>
+            <p class="mt-1 text-sm text-gray-500">Agent's understanding of the workspace structure</p>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <form action="/memory/directory-map" method="post">
+                <textarea name="content" id="directory-map" rows="12"
+                    class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 font-mono text-sm border p-3"
+                >{{ directory_map }}</textarea>
+                <div class="mt-3 flex justify-end">
+                    <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        💾 Save Directory Map
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Beliefs Summary -->
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
+            <div>
+                <h3 class="text-lg font-medium leading-6 text-gray-900">💭 Beliefs Summary</h3>
+                <p class="mt-1 text-sm text-gray-500">High-confidence beliefs (active in reasoning)</p>
+            </div>
+            <a href="/beliefs" class="text-sm text-indigo-600 hover:text-indigo-800">View All →</a>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            {% if beliefs %}
+            <ul class="space-y-2">
+                {% for belief in beliefs[:10] %}
+                <li class="flex items-center justify-between text-sm">
+                    <span class="text-gray-900">{{ belief.statement }}</span>
+                    <span class="text-gray-500 text-xs">{{ "%.0f"|format(belief.confidence * 100) }}%</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% if beliefs|length > 10 %}
+            <p class="mt-3 text-sm text-gray-500 text-center">+ {{ beliefs|length - 10 }} more beliefs</p>
+            {% endif %}
+            {% else %}
+            <p class="text-gray-500 text-center py-4">No active beliefs</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Memory Stats -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="bg-white rounded-lg shadow p-4">
+            <div class="text-sm text-gray-500">Working Memory</div>
+            <div class="mt-1 text-2xl font-semibold text-gray-900">{{ working_memory|length }} chars</div>
+        </div>
+        <div class="bg-white rounded-lg shadow p-4">
+            <div class="text-sm text-gray-500">Long-term Memory</div>
+            <div class="mt-1 text-2xl font-semibold text-gray-900">{{ longterm_memory|length }} chars</div>
+        </div>
+        <div class="bg-white rounded-lg shadow p-4">
+            <div class="text-sm text-gray-500">Active Beliefs</div>
+            <div class="mt-1 text-2xl font-semibold text-gray-900">{{ beliefs|length }}</div>
+        </div>
+    </div>
+</div>
+{% endblock %}

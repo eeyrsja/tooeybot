@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block title %}Beliefs - Tooeybot{% endblock %}
+{% block header %}Belief Management{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Add Belief Form -->
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-900">Add New Belief</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <form action="/beliefs/add" method="post" class="space-y-4">
+                <div>
+                    <label for="claim" class="block text-sm font-medium text-gray-700">Claim</label>
+                    <textarea name="claim" id="claim" rows="2" required
+                        placeholder="The factual claim or observation..."
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2"></textarea>
+                </div>
+                
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div>
+                        <label for="confidence" class="block text-sm font-medium text-gray-700">Confidence</label>
+                        <input type="range" name="confidence" id="confidence" min="0" max="1" step="0.1" value="0.7"
+                            class="mt-1 block w-full"
+                            oninput="document.getElementById('conf-value').textContent = this.value">
+                        <span id="conf-value" class="text-sm text-gray-500">0.7</span>
+                    </div>
+                    <div>
+                        <label for="belief_type" class="block text-sm font-medium text-gray-700">Type</label>
+                        <select name="belief_type" id="belief_type"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2">
+                            <option value="observed">Observed</option>
+                            <option value="inferred">Inferred</option>
+                            <option value="external" selected>External</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="source" class="block text-sm font-medium text-gray-700">Source</label>
+                        <input type="text" name="source" id="source"
+                            placeholder="Where this belief comes from"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border p-2">
+                    </div>
+                </div>
+                
+                <div class="flex justify-end">
+                    <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                        ➕ Add Belief
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Active Beliefs -->
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-900">🟢 Active Beliefs ({{ by_status.active|length }})</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            {% if by_status.active %}
+            <div class="space-y-4">
+                {% for belief in by_status.active %}
+                <div class="border rounded-lg p-4 {% if belief.confidence >= 0.8 %}border-green-200 bg-green-50{% elif belief.confidence >= 0.5 %}border-yellow-200 bg-yellow-50{% else %}border-red-200 bg-red-50{% endif %}">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono text-sm text-gray-500">{{ belief.belief_id }}</span>
+                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-800">{{ belief.belief_type }}</span>
+                            </div>
+                            <p class="mt-1 text-gray-900">{{ belief.claim }}</p>
+                            <div class="mt-2 flex items-center gap-4 text-xs text-gray-500">
+                                <span>Confidence: <strong>{{ "%.0f"|format(belief.confidence * 100) }}%</strong></span>
+                                {% if belief.provenance %}
+                                <span>Source: {{ belief.provenance[0].source if belief.provenance else 'unknown' }}</span>
+                                {% endif %}
+                                <span>Validated: {{ belief.last_validated }}</span>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <form action="/beliefs/{{ belief.belief_id }}/contest" method="post" class="inline">
+                                <input type="hidden" name="reason" value="Contested via web UI">
+                                <button type="submit" class="text-xs text-red-600 hover:text-red-800">⚠️ Contest</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-gray-500 text-center py-4">No active beliefs</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Contested Beliefs -->
+    {% if by_status.contested %}
+    <div class="overflow-hidden rounded-lg bg-yellow-50 border border-yellow-200 shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-yellow-200">
+            <h3 class="text-lg font-medium leading-6 text-yellow-800">⚠️ Contested Beliefs ({{ by_status.contested|length }})</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <div class="space-y-3">
+                {% for belief in by_status.contested %}
+                <div class="border border-yellow-300 rounded-lg p-3 bg-yellow-100">
+                    <div class="flex items-center gap-2">
+                        <span class="font-mono text-sm text-gray-500">{{ belief.belief_id }}</span>
+                        <span class="text-sm text-yellow-800">{{ belief.claim }}</span>
+                    </div>
+                    <p class="mt-1 text-xs text-yellow-700">{{ belief.notes }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Deprecated Beliefs -->
+    {% if by_status.deprecated %}
+    <div class="overflow-hidden rounded-lg bg-gray-50 border border-gray-200 shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-500">📦 Deprecated Beliefs ({{ by_status.deprecated|length }})</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            <div class="space-y-2">
+                {% for belief in by_status.deprecated %}
+                <div class="text-sm text-gray-500">
+                    <span class="font-mono">{{ belief.belief_id }}</span>: {{ belief.claim[:80] }}...
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

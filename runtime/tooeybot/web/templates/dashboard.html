@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Tooeybot{% endblock %}
+{% block header %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <!-- Pending Tasks -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Pending Tasks</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-gray-900">{{ pending_count }}</dd>
+        </div>
+        
+        <!-- Completed Tasks -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Completed Tasks</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-green-600">{{ completed_count }}</dd>
+        </div>
+        
+        <!-- Beliefs -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Active Beliefs</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-indigo-600">{{ belief_count }}</dd>
+        </div>
+        
+        <!-- Skills -->
+        <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+            <dt class="truncate text-sm font-medium text-gray-500">Skills</dt>
+            <dd class="mt-1 text-3xl font-semibold tracking-tight text-purple-600">{{ skill_count }}</dd>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <!-- Active Task -->
+        <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+                <h3 class="text-lg font-medium leading-6 text-gray-900">Active Task</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                {% if active_task %}
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-lg font-medium text-gray-900">{{ active_task.task_id }}</span>
+                        <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+                            {% if active_task.priority == 'high' %}bg-red-100 text-red-800
+                            {% elif active_task.priority == 'medium' %}bg-yellow-100 text-yellow-800
+                            {% else %}bg-green-100 text-green-800{% endif %}">
+                            {{ active_task.priority }}
+                        </span>
+                    </div>
+                    <p class="text-sm text-gray-600">{{ active_task.description[:200] }}...</p>
+                    <form action="/tasks/tick" method="post" class="mt-4">
+                        <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+                            ▶ Run Tick
+                        </button>
+                    </form>
+                </div>
+                {% else %}
+                <div class="text-center py-6">
+                    <p class="text-gray-500">No active task</p>
+                    <a href="/tasks" class="mt-2 inline-flex items-center text-indigo-600 hover:text-indigo-500">
+                        Create a task →
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Health Status -->
+        <div class="overflow-hidden rounded-lg bg-white shadow">
+            <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+                <h3 class="text-lg font-medium leading-6 text-gray-900">Health Status</h3>
+            </div>
+            <div class="px-4 py-5 sm:p-6">
+                <ul class="space-y-2">
+                    {% for check_name, status in health.items() %}
+                    <li class="flex items-center justify-between">
+                        <span class="text-sm text-gray-600">{{ check_name }}</span>
+                        <span class="inline-flex items-center">
+                            {% if status.ok %}
+                            <span class="text-green-500">✓</span>
+                            {% else %}
+                            <span class="text-red-500">✗</span>
+                            {% endif %}
+                            <span class="ml-2 text-xs text-gray-500">{{ status.message[:30] }}</span>
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Events -->
+    <div class="overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium leading-6 text-gray-900">Recent Events</h3>
+        </div>
+        <div class="px-4 py-5 sm:p-6">
+            {% if recent_events %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Task</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        {% for event in recent_events %}
+                        <tr>
+                            <td class="px-3 py-2 text-xs text-gray-500">{{ event.timestamp[:19] if event.timestamp else 'N/A' }}</td>
+                            <td class="px-3 py-2">
+                                <span class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium
+                                    {% if event.event_type == 'command' %}bg-blue-100 text-blue-800
+                                    {% elif event.event_type == 'task_update' %}bg-purple-100 text-purple-800
+                                    {% elif event.event_type == 'error' %}bg-red-100 text-red-800
+                                    {% else %}bg-gray-100 text-gray-800{% endif %}">
+                                    {{ event.event_type }}
+                                </span>
+                            </td>
+                            <td class="px-3 py-2 text-xs text-gray-600">{{ event.context.task_id if event.context else '-' }}</td>
+                            <td class="px-3 py-2 text-xs text-gray-600">
+                                {% if event.execution and event.execution.commands %}
+                                {{ event.execution.commands[0].cmd if event.execution.commands else '-' }}
+                                {% else %}
+                                {{ event.data[:50] if event.data else '-' }}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-gray-500 text-center py-4">No recent events</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
