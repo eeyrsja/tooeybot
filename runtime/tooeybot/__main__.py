@@ -98,7 +98,7 @@ def main():
     skill_list_parser.add_argument(
         "--status", "-s",
         type=str,
-        choices=["core", "learned", "candidates", "all"],
+        choices=["core", "learned", "candidate", "all"],
         default="all",
         help="Filter by status"
     )
