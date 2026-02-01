@@ -172,7 +172,29 @@ class Agent:
         return results
     
     def pre_flight_check(self) -> bool:
-        """Run pre-flight checks before any operation."""
+        """Run pre-flight checks before any operation.
+        
+        Auto-initializes the agent filesystem if it doesn't exist.
+        """
+        # Auto-initialize if agent home doesn't exist or is empty
+        if not self.agent_home.exists() or not any(self.agent_home.iterdir()):
+            logger.info("Agent home missing or empty, initializing...")
+            self.initialize()
+        
+        # Ensure boot files exist with minimal content
+        boot_files = {
+            "identity.md": "# Identity\n\nI am Tooeybot, an autonomous agent.",
+            "invariants.md": "# Invariants\n\n- Never harm the system\n- Log all actions\n- Respect budgets",
+            "operating_principles.md": "# Operating Principles\n\n- Think before acting\n- One action per cycle\n- Reflect on outcomes",
+        }
+        boot_dir = self.agent_home / "boot"
+        boot_dir.mkdir(parents=True, exist_ok=True)
+        for fname, content in boot_files.items():
+            fpath = boot_dir / fname
+            if not fpath.exists():
+                fpath.write_text(content)
+                logger.info(f"Created default {fname}")
+        
         results = self.health_check()
         
         # Required checks
