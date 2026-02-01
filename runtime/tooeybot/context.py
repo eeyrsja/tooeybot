@@ -7,8 +7,11 @@ Manages loading and prioritizing context from the agent's filesystem.
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, TYPE_CHECKING
 import logging
+
+if TYPE_CHECKING:
+    from .skills import SkillManager
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +32,10 @@ class ContextAssembler:
     # Rough estimate: 1 token ≈ 4 characters
     CHARS_PER_TOKEN = 4
     
-    def __init__(self, agent_home: Path, max_tokens: int = 6000):
+    def __init__(self, agent_home: Path, max_tokens: int = 6000, skill_manager: "SkillManager" = None):
         self.agent_home = agent_home
         self.max_tokens = max_tokens
+        self.skill_manager = skill_manager
         self.boot_dir = agent_home / "boot"
         self.memory_dir = agent_home / "memory"
         self.skills_dir = agent_home / "skills"
@@ -141,6 +145,18 @@ class ContextAssembler:
                 priority=4,
                 token_estimate=self.estimate_tokens(task_spec)
             ))
+            
+            # Add relevant skills for this task
+            if self.skill_manager:
+                skills_content = self.skill_manager.get_skills_for_context(task_spec)
+                if skills_content:
+                    all_items.append(ContextItem(
+                        name="available_skills",
+                        content=skills_content,
+                        tier="high",
+                        priority=5,
+                        token_estimate=self.estimate_tokens(skills_content)
+                    ))
         
         # Add high priority
         all_items.extend(self.get_high_context())

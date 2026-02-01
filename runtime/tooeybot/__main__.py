@@ -10,6 +10,7 @@ from .config import load_config
 from .agent import Agent
 from .logger import setup_logging
 from .maintenance import MaintenanceManager
+from .skills import SkillManager
 
 
 def main():
@@ -88,6 +89,60 @@ def main():
         type=int,
         default=7,
         help="How many days back to search"
+    )
+    
+    # --- Phase 2: Skills Commands ---
+    
+    # skill-list command - list all skills
+    skill_list_parser = subparsers.add_parser("skill-list", help="List all skills")
+    skill_list_parser.add_argument(
+        "--status", "-s",
+        type=str,
+        choices=["core", "learned", "candidates", "all"],
+        default="all",
+        help="Filter by status"
+    )
+    
+    # skill-stats command - show skill statistics
+    skill_stats_parser = subparsers.add_parser("skill-stats", help="Show skill statistics")
+    skill_stats_parser.add_argument(
+        "name",
+        type=str,
+        help="Skill name"
+    )
+    
+    # skill-promote command - promote a candidate skill
+    skill_promote_parser = subparsers.add_parser("skill-promote", help="Promote a candidate skill")
+    skill_promote_parser.add_argument(
+        "name",
+        type=str,
+        help="Skill name to promote"
+    )
+    
+    # skill-draft command - draft a new skill
+    skill_draft_parser = subparsers.add_parser("skill-draft", help="Draft a new skill")
+    skill_draft_parser.add_argument(
+        "name",
+        type=str,
+        help="Skill name"
+    )
+    skill_draft_parser.add_argument(
+        "--purpose", "-p",
+        type=str,
+        required=True,
+        help="What the skill does"
+    )
+    skill_draft_parser.add_argument(
+        "--triggers", "-t",
+        type=str,
+        required=True,
+        help="When to use the skill"
+    )
+    skill_draft_parser.add_argument(
+        "--procedure",
+        type=str,
+        required=True,
+        help="Step-by-step procedure"
     )
     
     args = parser.parse_args()
@@ -201,6 +256,89 @@ def main():
         
         if not found:
             print("No matches found in recent summaries.")
+    
+    # --- Phase 2: Skills Commands ---
+    
+    elif args.command == "skill-list":
+        skills_mgr = SkillManager(config.agent_home)
+        skills = skills_mgr.load_all_skills()
+        
+        # Filter by status
+        if args.status != "all":
+            skills = {k: v for k, v in skills.items() if v.status == args.status}
+        
+        if not skills:
+            print(f"No skills found with status: {args.status}")
+            sys.exit(0)
+        
+        # Group by status
+        by_status = {}
+        for key, skill in skills.items():
+            by_status.setdefault(skill.status, []).append(skill)
+        
+        for status, skill_list in by_status.items():
+            print(f"\n📁 {status.upper()} SKILLS:")
+            for skill in sorted(skill_list, key=lambda s: s.name):
+                stats = skills_mgr.get_skill_stats(skill.name)
+                uses = stats.get("use_count", 0)
+                successes = stats.get("success_count", 0)
+                print(f"   • {skill.name} v{skill.version} (uses: {uses}, success: {successes})")
+                print(f"     {skill.purpose[:60]}...")
+    
+    elif args.command == "skill-stats":
+        skills_mgr = SkillManager(config.agent_home)
+        stats = skills_mgr.get_skill_stats(args.name)
+        
+        if not stats:
+            print(f"❌ Skill not found: {args.name}")
+            sys.exit(1)
+        
+        print(f"📊 Skill: {stats['name']}")
+        print(f"   Version: {stats['version']}")
+        print(f"   Status:  {stats['status']}")
+        print(f"   Uses:    {stats['use_count']}")
+        print(f"   Success: {stats['success_count']}")
+        print(f"   Failure: {stats['failure_count']}")
+        if stats.get("last_used"):
+            print(f"   Last used: {stats['last_used']}")
+        if stats.get("ready_for_promotion"):
+            print(f"   ✅ Ready for promotion!")
+    
+    elif args.command == "skill-promote":
+        skills_mgr = SkillManager(config.agent_home)
+        
+        # Show promotable candidates first
+        promotable = skills_mgr.get_promotable_candidates()
+        if promotable:
+            print("📋 Candidates ready for promotion:")
+            for p in promotable:
+                print(f"   • {p['name']} ({p['success_count']} successful uses)")
+        
+        # Attempt promotion
+        result = skills_mgr.promote_skill(args.name)
+        
+        if result["success"]:
+            print(f"\n✅ Promoted {args.name} to learned skills!")
+        else:
+            print(f"\n❌ Promotion failed: {result['error']}")
+            sys.exit(1)
+    
+    elif args.command == "skill-draft":
+        skills_mgr = SkillManager(config.agent_home)
+        
+        skill_path = skills_mgr.draft_skill(
+            name=args.name,
+            purpose=args.purpose,
+            triggers=args.triggers,
+            procedure=args.procedure
+        )
+        
+        print(f"✅ Drafted candidate skill: {args.name}")
+        print(f"   Path: {skill_path}")
+        print("\nNext steps:")
+        print("   1. Edit the skill file to add validation and failure modes")
+        print("   2. Use the skill 3+ times successfully")
+        print("   3. Run 'tooeybot skill-promote {name}' to promote it")
 
 
 if __name__ == "__main__":

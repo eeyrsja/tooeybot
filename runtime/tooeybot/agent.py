@@ -15,6 +15,7 @@ from .logger import EventLogger
 from .executor import Executor
 from .context import ContextAssembler
 from .tasks import TaskManager, Task
+from .skills import SkillManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,11 @@ class Agent:
             self.event_logger,
             timeout=config.execution.command_timeout
         )
+        self.skill_manager = SkillManager(self.agent_home)
         self.context = ContextAssembler(
             self.agent_home,
-            max_tokens=config.context.max_tokens - config.context.response_reserve
+            max_tokens=config.context.max_tokens - config.context.response_reserve,
+            skill_manager=self.skill_manager
         )
         self.tasks = TaskManager(self.agent_home)
     
@@ -258,6 +261,11 @@ Format your response as:
         import re
         commands = re.findall(r'```bash\n(.*?)```', llm_output, re.DOTALL)
         
+        # Track which skills were relevant for this task
+        relevant_skills = self.skill_manager.find_relevant_skills(task.description, limit=3)
+        used_skill_names = [s.name for s in relevant_skills]
+        
+        execution_success = True
         for cmd_block in commands:
             # Execute the entire block as a single script, not line-by-line
             script = cmd_block.strip()
@@ -273,6 +281,7 @@ Format your response as:
                 if result.exit_code != 0:
                     logger.warning(f"Script failed with exit code {result.exit_code}")
                     logger.warning(f"Stderr: {result.stderr}")
+                    execution_success = False
                 else:
                     logger.info(f"Script completed successfully")
                     if result.stdout:
@@ -281,6 +290,11 @@ Format your response as:
         # Check for completion markers
         if "TASK_COMPLETE:" in llm_output:
             summary = llm_output.split("TASK_COMPLETE:")[-1].strip().split('\n')[0]
+            
+            # Record skill usage for relevant skills
+            for skill_name in used_skill_names:
+                self.skill_manager.record_skill_use(skill_name, success=execution_success)
+            
             self.tasks.complete_task(
                 task,
                 summary=summary,
@@ -296,6 +310,11 @@ Format your response as:
         
         elif "TASK_BLOCKED:" in llm_output:
             reason = llm_output.split("TASK_BLOCKED:")[-1].strip().split('\n')[0]
+            
+            # Record skill failures
+            for skill_name in used_skill_names:
+                self.skill_manager.record_skill_use(skill_name, success=False)
+            
             self.tasks.block_task(task, reason)
             self.event_logger.log_task_update(task.task_id, "blocked", reason)
             return TickResult(
