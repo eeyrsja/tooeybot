@@ -199,6 +199,14 @@ def main():
         help="Reason for contesting"
     )
     
+    # belief-purge command - purge operational/bad beliefs
+    belief_purge_parser = subparsers.add_parser("belief-purge", help="Purge operational/bad beliefs")
+    belief_purge_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be purged without actually purging"
+    )
+    
     # coherence-check command - run coherence check
     coherence_parser = subparsers.add_parser("coherence-check", help="Run coherence check on beliefs")
     
@@ -503,6 +511,43 @@ def main():
             print(f"\n❌ Potential contradictions found:")
             for c in result['potential_contradictions']:
                 print(f"   • {c['belief']} conflicts with {c['conflicts_with']}")
+    
+    elif args.command == "belief-purge":
+        belief_mgr = BeliefManager(config.agent_home)
+        
+        # Patterns that indicate operational/procedural beliefs (not world knowledge)
+        bad_patterns = [
+            "the agent", "agent's", "agent planned", "agent ran",
+            "was backed up", "was created", "was executed", "was written",
+            "the task", "task completed", "command was", "script reads",
+            "script writes", "embedded python", "planned to", "planned commands",
+            "output contained", "output showed", "response included"
+        ]
+        
+        all_beliefs = belief_mgr.get_all_beliefs()
+        to_purge = []
+        
+        for belief in all_beliefs:
+            claim_lower = belief.claim.lower()
+            for pattern in bad_patterns:
+                if pattern in claim_lower:
+                    to_purge.append(belief)
+                    break
+        
+        if not to_purge:
+            print("✅ No operational beliefs found to purge")
+        else:
+            print(f"🔍 Found {len(to_purge)} operational beliefs:")
+            for belief in to_purge:
+                print(f"   • {belief.belief_id}: {belief.claim[:60]}...")
+            
+            if args.dry_run:
+                print("\n📋 Dry run - no changes made")
+            else:
+                print(f"\n🗑️ Purging {len(to_purge)} beliefs...")
+                for belief in to_purge:
+                    belief_mgr.deprecate_belief(belief.belief_id, "Operational log, not world knowledge")
+                print("✅ Done - beliefs deprecated")
     
     elif args.command == "web":
         print(f"🌐 Starting Tooeybot Web UI on http://{args.host}:{args.port}")

@@ -580,3 +580,116 @@ Skills are documented procedures. When processing a task:
                     content += skill.to_context() + "\n---\n"
         
         return content
+
+    # =========================================================================
+    # Skill Proposal (from task outcomes)
+    # =========================================================================
+    
+    def propose_skill_from_outcome(
+        self,
+        task_id: str,
+        task_description: str,
+        outcome: str,
+        success: bool,
+        llm_provider=None
+    ) -> Optional[Path]:
+        """
+        Analyze a completed task to see if a reusable skill should be drafted.
+        
+        Only proposes skills for:
+        - Successful tasks (failures don't make good templates)
+        - Non-trivial procedures (more than simple commands)
+        - Patterns that might be reused
+        """
+        if not llm_provider or not success:
+            return None
+        
+        from .llm import Message
+        
+        messages = [
+            Message(
+                role="system",
+                content="""You identify reusable procedures from task outcomes.
+
+A task outcome should become a SKILL when:
+1. It involved a multi-step procedure (not just one command)
+2. The procedure is likely to be needed again for similar tasks
+3. The procedure has clear inputs and outputs
+4. It's not already a common/trivial operation
+
+Examples of good skills to draft:
+- "Deploy Python App" - multi-step: test, build, deploy, verify
+- "Analyze Log Files" - pattern matching, summarization
+- "Set Up Development Environment" - install dependencies, configure tools
+- "Database Backup and Verify" - dump, compress, checksum, store
+
+Examples of things that are NOT skills:
+- Running a single command like "ls" or "cat"
+- One-time fixes or cleanups
+- Tasks that are too specific to reuse
+- Things the shell already does naturally
+
+If the task doesn't represent a reusable procedure, respond: NO_SKILL"""
+            ),
+            Message(
+                role="user",
+                content=f"""Task: {task_description}
+
+Agent's approach:
+{outcome[:2500]}
+
+Should this become a reusable skill? If yes, provide:
+SKILL_NAME: <snake_case_name>
+PURPOSE: <one line description>
+TRIGGERS: <when should this skill be used>
+PROCEDURE:
+- Step 1: ...
+- Step 2: ...
+- Step 3: ...
+
+If not reusable, respond: NO_SKILL"""
+            )
+        ]
+        
+        try:
+            response = llm_provider.chat(messages)
+            
+            if "NO_SKILL" in response.content:
+                return None
+            
+            # Parse skill proposal
+            name_match = re.search(r'SKILL_NAME:\s*(.+)', response.content)
+            purpose_match = re.search(r'PURPOSE:\s*(.+)', response.content)
+            triggers_match = re.search(r'TRIGGERS:\s*(.+)', response.content)
+            procedure_match = re.search(r'PROCEDURE:\s*\n((?:[-*]\s*.+\n?)+)', response.content)
+            
+            if not all([name_match, purpose_match, triggers_match, procedure_match]):
+                logger.debug("Skill proposal incomplete, skipping")
+                return None
+            
+            name = name_match.group(1).strip().lower().replace(" ", "_").replace("-", "_")
+            purpose = purpose_match.group(1).strip()
+            triggers = triggers_match.group(1).strip()
+            procedure = procedure_match.group(1).strip()
+            
+            # Check if skill already exists
+            existing = self.get_skill(name)
+            if existing:
+                logger.debug(f"Skill {name} already exists, skipping")
+                return None
+            
+            # Draft the skill
+            skill_path = self.draft_skill(
+                name=name,
+                purpose=purpose,
+                triggers=triggers,
+                procedure=procedure,
+                notes=f"Auto-drafted from task: {task_id}"
+            )
+            
+            logger.info(f"Proposed new skill from task {task_id}: {name}")
+            return skill_path
+            
+        except Exception as e:
+            logger.error(f"Failed to propose skill: {e}")
+            return None

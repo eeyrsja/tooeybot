@@ -208,19 +208,39 @@ Deadline: {task.deadline or 'None'}
         system_prompt = f"""You are Tooeybot, an autonomous agent running in a Linux sandbox.
 
 AGENT HOME: {self.agent_home}
-When tasks reference /agent/*, translate to: {self.agent_home}/*
 
-COMMANDS: Use simple bash commands. The runtime handles logging automatically - do NOT implement your own logging.
+## Your Role
+You complete tasks step by step. Focus on the immediate task - the runtime handles:
+- Logging (don't add your own logging code)
+- Learning from outcomes (skills and beliefs are extracted automatically)
+- Memory updates
 
-Examples:
-- echo "content" > {self.agent_home}/scratch/file.txt
-- cat {self.agent_home}/scratch/file.txt  
-- mkdir -p {self.agent_home}/scratch/subdir
+## How to Complete Tasks
+1. Read the task description carefully
+2. Write a brief plan (1-2 sentences)
+3. Execute commands in a ```bash block
+4. End with TASK_COMPLETE: <summary> or TASK_BLOCKED: <reason>
 
-Format your response as:
-1. Brief plan (1-2 sentences)
-2. Commands in a ```bash block (keep it simple - one command per line, no functions or wrappers)
-3. End with TASK_COMPLETE: <summary> or TASK_BLOCKED: <reason>"""
+## Command Guidelines
+- Use simple, direct bash commands
+- One command per line (no complex scripts unless necessary)
+- Paths: when tasks reference /agent/*, use {self.agent_home}/*
+
+## Important
+- Don't over-engineer solutions
+- Don't wrap everything in error handlers unless the task requires it
+- Don't create backup files unless specifically asked
+- If something fails, report it with TASK_BLOCKED - don't retry endlessly
+
+## Response Format
+Plan: <1-2 sentences>
+
+```bash
+<commands>
+```
+
+TASK_COMPLETE: <what was accomplished>
+(or TASK_BLOCKED: <why it can't proceed>)"""
 
         messages = [
             Message(role="system", content=system_prompt),
@@ -298,7 +318,7 @@ Format your response as:
             for skill_name in used_skill_names:
                 self.skill_manager.record_skill_use(skill_name, success=execution_success)
             
-            # Extract beliefs from task outcome
+            # Extract beliefs from task outcome (only meaningful world knowledge)
             try:
                 extracted_beliefs = self.belief_manager.extract_beliefs_from_outcome(
                     task_id=task.task_id,
@@ -311,6 +331,25 @@ Format your response as:
                     logger.info(f"Extracted {len(extracted_beliefs)} beliefs from task outcome")
             except Exception as e:
                 logger.warning(f"Belief extraction failed: {e}")
+            
+            # Propose skill from task outcome (if it's a reusable pattern)
+            try:
+                proposed_skill = self.skill_manager.propose_skill_from_outcome(
+                    task_id=task.task_id,
+                    task_description=task.description,
+                    outcome=llm_output,
+                    success=execution_success,
+                    llm_provider=self.llm
+                )
+                if proposed_skill:
+                    logger.info(f"Proposed new skill: {proposed_skill.stem}")
+                    self.event_logger.log_event(
+                        "skill_proposed",
+                        {"skill": proposed_skill.stem, "task": task.task_id},
+                        level="INFO"
+                    )
+            except Exception as e:
+                logger.warning(f"Skill proposal failed: {e}")
             
             self.tasks.complete_task(
                 task,

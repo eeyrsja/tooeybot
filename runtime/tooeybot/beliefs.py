@@ -480,8 +480,8 @@ Generated: {datetime.now().isoformat()}
         """
         Extract beliefs from a completed task.
         
-        The LLM analyzes the outcome and proposes observations
-        that could become beliefs.
+        The LLM analyzes the outcome and proposes meaningful beliefs
+        about the environment, capabilities, or world - NOT operational logs.
         """
         if not llm_provider:
             return []
@@ -491,9 +491,27 @@ Generated: {datetime.now().isoformat()}
         messages = [
             Message(
                 role="system",
-                content="""You extract factual observations from task outcomes.
-Only extract concrete, verifiable facts - not opinions or speculation.
-Each observation should be a single, clear statement."""
+                content="""You extract meaningful BELIEFS from task outcomes.
+
+A BELIEF is something the agent should remember about the world, its capabilities, 
+or its environment that will help with future tasks. 
+
+GOOD beliefs (extract these):
+- "The backup directory /mnt/backups has 50GB free space"
+- "Python 3.11 is installed at /usr/bin/python3"  
+- "The config file uses YAML format, not JSON"
+- "Git commits require --signoff flag in this repository"
+- "The API rate limit is 100 requests per minute"
+
+BAD beliefs (DO NOT extract):
+- "The agent ran command X" (this is a log, not a belief)
+- "The task completed successfully" (this is task status)
+- "The agent planned to do X then Y" (this is procedure, not belief)
+- "The output contained X lines" (this is ephemeral data)
+- "File X was backed up to Y" (this is action taken, not world knowledge)
+
+Only extract beliefs that would help the agent make better decisions in FUTURE tasks.
+If the task outcome doesn't reveal any meaningful world knowledge, say NO_OBSERVATIONS."""
             ),
             Message(
                 role="user",
@@ -503,12 +521,13 @@ Outcome: {"Success" if success else "Failure"}
 Agent's response:
 {outcome[:2000]}
 
-Extract 0-3 factual observations from this outcome. Format:
-OBSERVATION: <factual claim>
+Extract 0-2 meaningful beliefs about the world/environment that will help with future tasks.
+Format (if any):
+OBSERVATION: <belief about the world, not about what the agent did>
 CONFIDENCE: <0.0-1.0>
 TYPE: observed | inferred
 
-If nothing worth recording, respond with: NO_OBSERVATIONS"""
+If nothing meaningful to record, respond with: NO_OBSERVATIONS"""
             )
         ]
         
@@ -525,11 +544,22 @@ If nothing worth recording, respond with: NO_OBSERVATIONS"""
             matches = re.findall(obs_pattern, response.content, re.MULTILINE)
             
             for claim, conf, obs_type in matches:
+                # Filter out operational-sounding claims
+                claim_lower = claim.lower()
+                skip_phrases = [
+                    "the agent", "agent's", "agent planned", "agent ran",
+                    "was backed up", "was created", "was executed",
+                    "the task", "task completed", "command was",
+                    "script reads", "script writes", "embedded python"
+                ]
+                if any(phrase in claim_lower for phrase in skip_phrases):
+                    logger.debug(f"Skipping operational observation: {claim[:50]}...")
+                    continue
+                
                 # Check for contradictions first
                 contradiction_check = self.check_contradiction(claim, llm_provider)
                 
                 if contradiction_check["has_contradiction"]:
-                    # Don't add contradicting belief, but log it
                     logger.warning(f"Skipping contradicting observation: {claim[:50]}...")
                     continue
                 
