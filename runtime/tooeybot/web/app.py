@@ -11,6 +11,7 @@ Provides a web interface for:
 """
 
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -35,7 +36,18 @@ from tooeybot.curiosity import CuriosityManager
 from tooeybot.budgets import AgentBudgets, BudgetEnforcer
 
 
-app = FastAPI(title="Tooeybot", description="Autonomous Agent Web Interface")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup/shutdown events."""
+    # Startup
+    get_config()
+    print(f"Tooeybot Web UI started - Agent home: {agent_home}")
+    yield
+    # Shutdown (if needed)
+    print("Tooeybot Web UI shutting down")
+
+
+app = FastAPI(title="Tooeybot", description="Autonomous Agent Web Interface", lifespan=lifespan)
 
 # Setup templates
 templates_dir = Path(__file__).parent / "templates"
@@ -853,11 +865,5 @@ async def api_curiosity():
 
 
 # ============================================================================
-# Startup
+# Main entry point
 # ============================================================================
-
-@app.on_event("startup")
-async def startup():
-    """Initialize on startup."""
-    get_config()
-    print(f"Tooeybot Web UI started - Agent home: {agent_home}")
