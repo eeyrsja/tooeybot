@@ -97,9 +97,65 @@ python -m tooeybot tick
 
 ---
 
-## What's Next (Phase 1)
+## Phase 1 — Memory
 
-- Daily summary generation
-- Memory promotion pipeline
-- Snapshot creation
-- Basic recovery procedures
+### New Commands
+
+```bash
+# Generate daily summary from events
+python -m tooeybot summarize
+python -m tooeybot summarize --date 2026-01-31
+
+# Create a git snapshot
+python -m tooeybot snapshot
+python -m tooeybot snapshot --reason "before-experiment"
+
+# Run full daily maintenance
+python -m tooeybot maintain
+
+# Recall from memory/summaries
+python -m tooeybot recall "TASK-001"
+python -m tooeybot recall "error" --days 14
+
+# Restore from snapshot
+python -m tooeybot restore snapshot-2026-02-01_120000
+```
+
+### Memory Promotion
+
+To promote items from working memory to long-term memory, add `[PROMOTE]` or `[IMPORTANT]` to any line in `/agent/memory/working.md`:
+
+```markdown
+## Session Notes
+- Learned that gpt-5-mini doesn't support temperature parameter [PROMOTE]
+- TASK-001 completed successfully
+```
+
+When `maintain` runs, these tagged items move to long-term memory.
+
+### Setting Up Cron
+
+See [scheduled-maintenance.md](scheduled-maintenance.md) for cron setup.
+
+Quick setup:
+```bash
+chmod +x ~/dev/tooeybot/scripts/daily-maintenance.sh
+crontab -e
+# Add: 0 0 * * * /home/stu/dev/tooeybot/scripts/daily-maintenance.sh
+```
+
+### Phase 1 Success Criteria
+
+✅ Daily summary generation  
+✅ Git-based snapshots with tags  
+✅ Memory promotion pipeline  
+✅ Restore from snapshot  
+✅ Recall from summaries  
+
+---
+
+## What's Next (Phase 2)
+
+- Execute pre-written core skills
+- Draft candidate skills
+- Manual skill promotion (or gated auto-promotion)

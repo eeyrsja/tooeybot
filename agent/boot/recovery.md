@@ -73,13 +73,53 @@ Requires human task: `TASK: Exit safe mode`
 
 ## Rollback Procedure
 
-1. Identify target snapshot (daily/weekly/monthly)
-2. Verify snapshot integrity
-3. Create pre-rollback snapshot
-4. Restore files from snapshot
-5. Reset git to snapshot commit
-6. Run health checks
-7. Log rollback completion
+### Using CLI (recommended)
+
+```bash
+# List available snapshots
+cd ~/dev/tooeybot/runtime
+source venv/bin/activate
+
+# View recent snapshots
+cd ~/dev/tooeybot/agent
+git log --oneline --tags -10
+
+# Restore to a specific snapshot
+python -m tooeybot restore <commit-hash-or-tag>
+```
+
+### Manual Rollback
+
+```bash
+cd ~/dev/tooeybot/agent
+
+# 1. Create backup of current state
+git add -A
+git commit -m "pre-rollback-backup"
+git tag "pre-rollback-$(date +%Y%m%d-%H%M%S)"
+
+# 2. Find the snapshot to restore
+git log --oneline --tags -20
+
+# 3. Restore files from that snapshot
+git checkout <target-commit> -- .
+
+# 4. Verify
+python -m tooeybot health
+```
+
+### Daily Maintenance Recovery
+
+If daily maintenance fails:
+
+```bash
+# Run maintenance manually
+python -m tooeybot maintain
+
+# Or run individual steps:
+python -m tooeybot summarize
+python -m tooeybot snapshot --reason "manual-recovery"
+```
 
 ---
 
