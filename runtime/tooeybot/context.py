@@ -54,7 +54,7 @@ class ContextAssembler:
         """Get context items that are always included."""
         items = []
         
-        # Identity
+        # Identity - keep this short
         content = self.read_file_safe(self.boot_dir / "identity.md")
         if content:
             items.append(ContextItem(
@@ -65,38 +65,10 @@ class ContextAssembler:
                 token_estimate=self.estimate_tokens(content)
             ))
         
-        # Invariants
-        content = self.read_file_safe(self.boot_dir / "invariants.md")
-        if content:
-            items.append(ContextItem(
-                name="invariants",
-                content=content,
-                tier="always",
-                priority=2,
-                token_estimate=self.estimate_tokens(content)
-            ))
+        # Skip invariants and operating_principles for now - they make the LLM over-engineer
+        # The runtime handles logging automatically, no need to tell the LLM about I-001
         
-        # Operating principles
-        content = self.read_file_safe(self.boot_dir / "operating_principles.md")
-        if content:
-            items.append(ContextItem(
-                name="operating_principles",
-                content=content,
-                tier="always",
-                priority=3,
-                token_estimate=self.estimate_tokens(content)
-            ))
-        
-        # Skills index
-        content = self.read_file_safe(self.skills_dir / "index.md")
-        if content:
-            items.append(ContextItem(
-                name="skills_index",
-                content=content,
-                tier="always",
-                priority=5,
-                token_estimate=self.estimate_tokens(content)
-            ))
+        # Skip skills index - it confuses the LLM into using abstract skill names
         
         return items
     

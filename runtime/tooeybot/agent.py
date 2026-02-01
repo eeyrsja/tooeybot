@@ -200,42 +200,25 @@ Deadline: {task.deadline or 'None'}
         
         # Build messages for LLM
         system_prompt = f"""You are Tooeybot, an autonomous agent running in a Linux sandbox.
-You process tasks by reasoning about them and executing shell commands.
 
-IMPORTANT PATHS:
-- Your agent home is: {self.agent_home}
-- When tasks reference /agent/*, use the full path: {self.agent_home}/*
-- Example: /agent/scratch/file.txt -> {self.agent_home}/scratch/file.txt
+AGENT HOME: {self.agent_home}
+When tasks reference /agent/*, translate to: {self.agent_home}/*
 
-IMPORTANT: Use actual bash/shell commands, not abstract skill names.
-Examples of correct commands:
-- To write a file: echo "content" > {self.agent_home}/scratch/file.txt
-- To read a file: cat {self.agent_home}/scratch/file.txt
-- To create a directory: mkdir -p {self.agent_home}/scratch/subdir
-- To append to a file: echo "content" >> {self.agent_home}/scratch/file.txt
+COMMANDS: Use simple bash commands. The runtime handles logging automatically - do NOT implement your own logging.
 
-Do NOT use 'write_file', 'read_file', or 'log_event' as commands - these are conceptual skills, not shell commands.
+Examples:
+- echo "content" > {self.agent_home}/scratch/file.txt
+- cat {self.agent_home}/scratch/file.txt  
+- mkdir -p {self.agent_home}/scratch/subdir
 
-When you need to execute commands, format them as:
-```bash
-<command>
-```
-
-After providing the commands, ALWAYS include a completion marker:
-- If commands will complete the task: TASK_COMPLETE: <brief summary>
-- If you cannot complete the task: TASK_BLOCKED: <reason>
-
-Format:
-1. Explain your plan
-2. Provide bash commands
-3. State TASK_COMPLETE or TASK_BLOCKED
-
-Always explain your reasoning before executing commands.
-Follow your invariants and operating principles at all times."""
+Format your response as:
+1. Brief plan (1-2 sentences)
+2. Commands in a ```bash block (keep it simple - one command per line, no functions or wrappers)
+3. End with TASK_COMPLETE: <summary> or TASK_BLOCKED: <reason>"""
 
         messages = [
             Message(role="system", content=system_prompt),
-            Message(role="user", content=f"# Agent Context\n\n{full_context}\n\n---\n\nProcess the current task. What is your plan and what commands will you execute?")
+            Message(role="user", content=f"# Agent Context\n\n{full_context}\n\n---\n\nProcess the current task.")
         ]
         
         # Debug: log what we're sending to the LLM
